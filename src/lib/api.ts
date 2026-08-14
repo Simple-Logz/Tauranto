@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+export const supabaseConfigured=Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL&&process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
 const url=process.env.EXPO_PUBLIC_SUPABASE_URL||"https://configuration-required.supabase.co", anon=process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY||"configuration-required";
 export const supabase=createClient(url,anon,{auth:{persistSession:true,autoRefreshToken:true}});
 const base=(process.env.EXPO_PUBLIC_API_URL||"").replace(/\/$/,"");
