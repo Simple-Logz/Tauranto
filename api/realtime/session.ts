@@ -1,0 +1,3 @@
+import type { VercelRequest,VercelResponse } from "@vercel/node";
+import { fail,requireUser } from "../../server/http";
+export default async function handler(req:VercelRequest,res:VercelResponse){try{await requireUser(req);const response=await fetch("https://api.openai.com/v1/realtime/client_secrets",{method:"POST",headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({session:{type:"realtime",model:"gpt-realtime-2.1",instructions:"You are Tauranto. Speak briefly and warmly. Never claim a restaurant action happened; all actions require human approval."}})});const data=await response.json();return res.status(response.status).json(data)}catch(e){return fail(res,e)}}

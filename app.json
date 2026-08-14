@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Tauranto",
+    "slug": "tauranto-restaurant-voiceops",
+    "version": "0.4.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "tauranto",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bluelink.tauranto",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Tauranto uses speech recognition to turn restaurant instructions into reviewable actions.",
+        "NSMicrophoneUsageDescription": "Tauranto uses the microphone only while foreground wake standby or command capture is enabled."
+      }
+    },
+    "android": {
+      "package": "com.bluelink.tauranto",
+      "permissions": ["android.permission.RECORD_AUDIO"],
+      "adaptiveIcon": { "backgroundColor": "#E8F0DB" }
+    },
+    "plugins": [
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Tauranto to hear restaurant commands while wake standby or command capture is active.",
+          "speechRecognitionPermission": "Allow Tauranto to convert restaurant commands into text."
+        }
+      ]
+    ],
+    "androidStatusBar": { "backgroundColor": "#FAF8F1", "barStyle": "dark-content" }
+  }
+}
