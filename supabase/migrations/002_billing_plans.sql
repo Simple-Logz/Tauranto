@@ -1,35 +1,7 @@
 create type public.subscription_status as enum ('trialing','active','past_due','cancelled');
-
-create table public.plans (
-  id text primary key,
-  name text not null,
-  monthly_price_cents integer,
-  description text not null,
-  features jsonb not null default '[]',
-  entitlements jsonb not null default '{}',
-  active boolean not null default true,
-  created_at timestamptz not null default now()
-);
-
-create table public.restaurant_subscriptions (
-  id uuid primary key default gen_random_uuid(),
-  restaurant_id uuid not null unique references public.restaurants on delete cascade,
-  plan_id text not null references public.plans(id),
-  status public.subscription_status not null default 'trialing',
-  provider text,
-  provider_customer_id text,
-  provider_subscription_id text,
-  current_period_end timestamptz,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
+create table public.plans (id text primary key,name text not null,monthly_price_cents integer,description text not null,features jsonb not null default '[]',entitlements jsonb not null default '{}',active boolean not null default true,created_at timestamptz not null default now());
+create table public.restaurant_subscriptions (id uuid primary key default gen_random_uuid(),restaurant_id uuid not null unique references public.restaurants on delete cascade,plan_id text not null references public.plans(id),status public.subscription_status not null default 'trialing',provider text,provider_customer_id text,provider_subscription_id text,current_period_end timestamptz,created_at timestamptz not null default now(),updated_at timestamptz not null default now());
 insert into public.plans(id,name,monthly_price_cents,description,features,entitlements) values
 ('basic','Basic',1500,'Voice operations for independent restaurants','["Voice and typed commands","Manager approvals","Activity history","Website webhook","Google Calendar and Gmail when configured","1 restaurant workspace","Up to 3 managers"]','{"voice_commands":true,"approvals":true,"activity":true,"website":true,"google_calendar":true,"gmail":true,"slack":false,"hubspot":false,"square":false,"toast":false,"multi_location":false,"advanced_audit":false}'),
-('enterprise','Enterprise',4900,'Connected operations for growing restaurant groups','["Everything in Basic","Slack and HubSpot","Square and Toast connectors when configured","Multi-location operations","Advanced audit controls","Priority onboarding and support"]','{"voice_commands":true,"approvals":true,"activity":true,"website":true,"google_calendar":true,"gmail":true,"slack":true,"hubspot":true,"square":true,"toast":true,"multi_location":true,"advanced_audit":true}');
-
-alter table public.plans enable row level security;
-alter table public.restaurant_subscriptions enable row level security;
-create policy "authenticated users see plans" on public.plans for select to authenticated using(active=true);
-create policy "members see subscription" on public.restaurant_subscriptions for select using(public.is_member(restaurant_id));
-create index subscriptions_restaurant on public.restaurant_subscriptions(restaurant_id);
+('enterprise','Enterprise',2900,'Connected operations for growing restaurant groups','["Everything in Basic","Slack and HubSpot","Square and Toast connectors when configured","Multi-location operations","Advanced audit controls","Priority onboarding and support"]','{"voice_commands":true,"approvals":true,"activity":true,"website":true,"google_calendar":true,"gmail":true,"slack":true,"hubspot":true,"square":true,"toast":true,"multi_location":true,"advanced_audit":true}');
+alter table public.plans enable row level security;alter table public.restaurant_subscriptions enable row level security;create policy "authenticated users see plans" on public.plans for select to authenticated using(active=true);create policy "members see subscription" on public.restaurant_subscriptions for select using(public.is_member(restaurant_id));create index subscriptions_restaurant on public.restaurant_subscriptions(restaurant_id);
