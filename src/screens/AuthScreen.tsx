@@ -78,27 +78,15 @@ export function AuthScreen() {
           <View style={styles.phoneFrame}>
             <View style={styles.brandRow}>
               <View style={styles.mark}><Text style={styles.markText}>T</Text></View>
-              <View>
-                <Text style={styles.brand}>TAURANTO</Text>
-                <Text style={styles.brandMeta}>RESTAURANT VOICEOPS</Text>
-              </View>
-              <View style={styles.securePill}>
-                <Ionicons name="shield-checkmark" size={13} color={colors.leafDeep} />
-                <Text style={styles.secureText}>Private</Text>
-              </View>
+              <Text style={styles.brand}>TAURANTO</Text>
             </View>
 
             <View style={styles.intro}>
-              <Text style={styles.kicker}>HUMAN-APPROVED AUTOMATION</Text>
-              <Text style={styles.title}>Run the shift without losing control.</Text>
-              <Text style={styles.copy}>Capture instructions, verify the transcript, and approve every action before Tauranto sends it.</Text>
+              <Text style={styles.title}>Run your restaurant without losing control.</Text>
             </View>
 
             <View style={styles.formCard}>
               <Text style={styles.formTitle}>{isCreate ? "Create your pilot account" : "Welcome back"}</Text>
-              <Text style={styles.formCopy}>
-                {isCreate ? "Use the email address that should own this restaurant workspace." : "Sign in with the account registered in your Tauranto workspace."}
-              </Text>
 
               {!supabaseConfigured && (
                 <View style={[styles.notice, styles.noticeError]}>
@@ -140,10 +128,6 @@ export function AuthScreen() {
               </View>
             </View>
 
-            <View style={styles.privacyRow}>
-              <Ionicons name="mic-off-outline" size={15} color={colors.muted} />
-              <Text style={styles.note}>The microphone stays off until you enable standby or tap Speak.</Text>
-            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -152,21 +136,17 @@ export function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: "#EEF1EA" }, keyboard: { flex: 1 },
-  scroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 16, paddingVertical: 24 },
-  phoneFrame: { width: "100%", maxWidth: 460, backgroundColor: colors.cream, borderRadius: 30, padding: 22, borderWidth: 1, borderColor: "#DDE3D8", ...shadow },
-  brandRow: { flexDirection: "row", alignItems: "center" }, mark: { width: 43, height: 43, borderRadius: 14, backgroundColor: colors.leafDeep, alignItems: "center", justifyContent: "center", marginRight: 11 },
-  markText: { fontFamily: "DMSans_700Bold", fontSize: 21, color: "white" }, brand: { fontFamily: "DMSans_700Bold", fontSize: 12, letterSpacing: 1.1, color: colors.ink },
-  brandMeta: { fontFamily: "DMSans_600SemiBold", fontSize: 7, letterSpacing: 1.2, color: colors.muted, marginTop: 2 },
-  securePill: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 9, paddingVertical: 6, backgroundColor: colors.leafPale, borderRadius: 99 }, secureText: { fontFamily: "DMSans_700Bold", fontSize: 8, color: colors.leafDeep },
-  intro: { paddingTop: 30, paddingBottom: 20 }, kicker: { fontFamily: "DMSans_700Bold", fontSize: 8, letterSpacing: 1.35, color: colors.leafDeep },
-  title: { fontFamily: "DMSans_700Bold", fontSize: 30, lineHeight: 35, letterSpacing: -0.6, color: colors.ink, marginTop: 9 }, copy: { fontFamily: "DMSans_400Regular", fontSize: 12, lineHeight: 19, color: colors.inkSoft, marginTop: 10 },
-  formCard: { backgroundColor: colors.paper, borderRadius: radius.lg, padding: 17, borderWidth: 1, borderColor: colors.line }, formTitle: { fontFamily: "DMSans_700Bold", fontSize: 19, color: colors.ink },
-  formCopy: { fontFamily: "DMSans_400Regular", fontSize: 10, lineHeight: 15, color: colors.muted, marginTop: 5, marginBottom: 16 },
+  page: { flex: 1, backgroundColor: colors.cream }, keyboard: { flex: 1 },
+  scroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, paddingVertical: 28 },
+  phoneFrame: { width: "100%", maxWidth: 460 },
+  brandRow: { flexDirection: "row", alignItems: "center" }, mark: { width: 48, height: 48, borderRadius: 15, backgroundColor: "#315B3D", alignItems: "center", justifyContent: "center", marginRight: 12 },
+  markText: { fontFamily: "DMSans_700Bold", fontSize: 23, color: "white" }, brand: { fontFamily: "DMSans_700Bold", fontSize: 15, letterSpacing: 1.8, color: colors.ink },
+  intro: { paddingTop: 34, paddingBottom: 26 },
+  title: { fontFamily: "DMSans_700Bold", fontSize: 34, lineHeight: 40, letterSpacing: -0.8, color: colors.ink },
+  formCard: { backgroundColor: colors.paper, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: colors.line, ...shadow }, formTitle: { fontFamily: "DMSans_700Bold", fontSize: 22, color: colors.ink, marginBottom: 20 },
   notice: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 12, padding: 11, marginBottom: 13 }, noticeError: { backgroundColor: colors.tomatoPale, borderWidth: 1, borderColor: "#F0C8BB" }, noticeSuccess: { backgroundColor: colors.leafPale, borderWidth: 1, borderColor: "#D6E2C8" },
   noticeText: { flex: 1, fontFamily: "DMSans_500Medium", fontSize: 9, lineHeight: 14, color: colors.leafDeep }, noticeErrorText: { color: "#8D3724" },
-  label: { fontFamily: "DMSans_700Bold", fontSize: 9, color: colors.inkSoft, marginBottom: 6, marginLeft: 2 }, field: { height: 50, flexDirection: "row", alignItems: "center", gap: 9, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: "#FBFCF9", paddingHorizontal: 13, marginBottom: 13 },
-  input: { flex: 1, height: "100%", fontFamily: "DMSans_500Medium", fontSize: 12, color: colors.ink }, primary: { height: 50, borderRadius: 14, backgroundColor: colors.leafDeep, flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 3 }, primaryText: { fontFamily: "DMSans_700Bold", color: "white", fontSize: 11 },
-  pressed: { opacity: 0.88 }, disabled: { opacity: 0.62 }, switchRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 5, marginTop: 16 }, switchCopy: { fontFamily: "DMSans_400Regular", fontSize: 10, color: colors.muted }, switchAction: { fontFamily: "DMSans_700Bold", fontSize: 10, color: colors.leafDeep },
-  privacyRow: { flexDirection: "row", justifyContent: "center", alignItems: "flex-start", gap: 7, paddingHorizontal: 14, paddingTop: 17 }, note: { flex: 1, fontFamily: "DMSans_400Regular", fontSize: 8, lineHeight: 13, color: colors.muted, textAlign: "center" },
+  label: { fontFamily: "DMSans_700Bold", fontSize: 12, color: colors.inkSoft, marginBottom: 8, marginLeft: 2 }, field: { height: 58, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: "#FBFCF9", paddingHorizontal: 15, marginBottom: 17 },
+  input: { flex: 1, height: "100%", fontFamily: "DMSans_500Medium", fontSize: 15, color: colors.ink }, primary: { height: 58, borderRadius: 16, backgroundColor: "#315B3D", flexDirection: "row", gap: 9, alignItems: "center", justifyContent: "center", marginTop: 3 }, primaryText: { fontFamily: "DMSans_700Bold", color: "white", fontSize: 15 },
+  pressed: { opacity: 0.88 }, disabled: { opacity: 0.62 }, switchRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 20 }, switchCopy: { fontFamily: "DMSans_400Regular", fontSize: 13, color: colors.muted }, switchAction: { fontFamily: "DMSans_700Bold", fontSize: 13, color: "#315B3D" },
 });
