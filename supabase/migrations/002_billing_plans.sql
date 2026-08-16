@@ -25,8 +25,8 @@ create table public.restaurant_subscriptions (
 );
 
 insert into public.plans(id,name,monthly_price_cents,description,features,entitlements) values
-('basic','Basic',4900,'Voice operations for independent restaurants','["Voice and typed commands","Manager approvals","Activity history","Website webhook","Google Calendar and Gmail when configured","1 restaurant workspace","Up to 3 managers"]','{"voice_commands":true,"approvals":true,"activity":true,"website":true,"google_calendar":true,"gmail":true,"slack":false,"hubspot":false,"square":false,"toast":false,"multi_location":false,"advanced_audit":false}'),
-('enterprise','Enterprise',null,'Connected operations for growing restaurant groups','["Everything in Basic","Slack and HubSpot","Square and Toast connectors when configured","Multi-location operations","Advanced audit controls","Priority onboarding and support"]','{"voice_commands":true,"approvals":true,"activity":true,"website":true,"google_calendar":true,"gmail":true,"slack":true,"hubspot":true,"square":true,"toast":true,"multi_location":true,"advanced_audit":true}');
+('basic','Basic',1500,'Voice operations for independent restaurants','["Voice and typed commands","Manager approvals","Activity history","Website webhook","Google Calendar and Gmail when configured","1 restaurant workspace","Up to 3 managers"]','{"voice_commands":true,"approvals":true,"activity":true,"website":true,"google_calendar":true,"gmail":true,"slack":false,"hubspot":false,"square":false,"toast":false,"multi_location":false,"advanced_audit":false}'),
+('enterprise','Enterprise',4900,'Connected operations for growing restaurant groups','["Everything in Basic","Slack and HubSpot","Square and Toast connectors when configured","Multi-location operations","Advanced audit controls","Priority onboarding and support"]','{"voice_commands":true,"approvals":true,"activity":true,"website":true,"google_calendar":true,"gmail":true,"slack":true,"hubspot":true,"square":true,"toast":true,"multi_location":true,"advanced_audit":true}');
 
 alter table public.plans enable row level security;
 alter table public.restaurant_subscriptions enable row level security;
