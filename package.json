@@ -26,6 +26,7 @@
     "expo-speech": "~14.0.7",
     "expo-speech-recognition": "^3.0.1",
     "expo-status-bar": "~3.0.0",
+    "expo-updates": "~29.0.19",
     "openai": "^5.12.2",
     "react": "19.1.0",
     "react-dom": "^19.1.0",

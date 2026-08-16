@@ -20,6 +20,8 @@
       "versionCode": 9,
       "permissions": [
         "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "adaptiveIcon": {
@@ -43,7 +45,8 @@
       "expo-font"
     ],
     "updates": {
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/fbc1e404-3eeb-4731-a491-0b47f03bb449"
     },
     "androidStatusBar": {
       "backgroundColor": "#FAF8F1",
@@ -54,6 +57,9 @@
         "projectId": "fbc1e404-3eeb-4731-a491-0b47f03bb449"
       }
     },
-    "owner": "tauranto-01"
+    "owner": "tauranto-01",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }
