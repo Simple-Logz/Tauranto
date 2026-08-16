@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useFonts as useDMSans, DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold } from "@expo-google-fonts/dm-sans";
 import { View, ActivityIndicator, Animated, Easing, StyleSheet, Text } from "react-native";
+import * as Updates from "expo-updates";
 import { Shell } from "./src/components/Shell";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { ActivityScreen } from "./src/screens/ActivityScreen";
@@ -15,70 +16,20 @@ import { taurantoApi, supabase } from "./src/lib/api";
 import { AuthScreen } from "./src/screens/AuthScreen";
 
 export type TabName = "Today" | "Activity" | "Integrations" | "More";
-
 export default function App() {
-  const [dmLoaded] = useDMSans({ DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold });
-  const [splashDone, setSplashDone] = useState(false);
-  const splashScale = useRef(new Animated.Value(1.45)).current;
-  const splashOpacity = useRef(new Animated.Value(0)).current;
-  const [tab, setTab] = useState<TabName>("Today");
-  const [commands, setCommands] = useState<VoiceCommand[]>([]);
-  const [session, setSession] = useState<Session | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(splashOpacity, { toValue: 1, duration: 320, useNativeDriver: true }),
-      Animated.timing(splashScale, { toValue: 0.92, duration: 1550, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-    ]).start();
-    const timer = setTimeout(() => setSplashDone(true), 2000);
-    return () => clearTimeout(timer);
-  }, [splashOpacity, splashScale]);
-  useEffect(() => { supabase.auth.getSession().then(({data}) => { setSession(data.session); setAuthReady(true); }); const {data}=supabase.auth.onAuthStateChange((_event,next)=>setSession(next)); return()=>data.subscription.unsubscribe(); },[]);
-  useEffect(() => {
-    const restaurantId=process.env.EXPO_PUBLIC_RESTAURANT_ID;
-    if(!session||!restaurantId)return;
-    taurantoApi.listCommands(restaurantId).then(({commands:rows})=>setCommands((rows||[]).map((row:any)=>mapCommand(row,session.user.id)))).catch(()=>{});
-  },[session]);
-
-  if (!splashDone) {
-    return (
-      <View style={splashStyles.page}>
-        <StatusBar style="light" />
-        <Animated.View style={[splashStyles.brand, { opacity: splashOpacity, transform: [{ scale: splashScale }] }]}>
-          <View style={splashStyles.mark}><Text style={splashStyles.markText}>T</Text></View>
-          <Text style={splashStyles.name}>TAURANTO</Text>
-        </Animated.View>
-      </View>
-    );
-  }
-  if (!dmLoaded || !authReady) {
-    return <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.cream }}><ActivityIndicator color={colors.leafDeep} /></View>;
-  }
-  if (!session) return <SafeAreaProvider><StatusBar style="dark"/><AuthScreen/></SafeAreaProvider>;
-
-  const addCommand = async (draft: VoiceCommand) => { const restaurantId=process.env.EXPO_PUBLIC_RESTAURANT_ID; if(!restaurantId)throw new Error("Restaurant workspace is not configured."); const {command}=await taurantoApi.interpret(restaurantId,draft.transcript,"voice"); const mapped=mapCommand(command); setCommands(current=>[mapped,...current.filter(item=>item.id!==mapped.id)]); };
-  const decide = async (id: string, approved: boolean) => { const item=commands.find(x=>x.id===id); if(item?.approvalId) await taurantoApi.decide(item.approvalId,approved?"approved":"rejected"); setCommands((current) => current.map((entry) => entry.id === id ? { ...entry, status: approved ? "approved" : "rejected" } : entry)); };
-
-  return (
-    <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <Shell tab={tab} onTabChange={setTab} pending={commands.filter((item) => item.status === "pending").length}>
-        {tab === "Today" && <HomeScreen commands={commands} onCommand={addCommand} onDecide={decide} onOpenActivity={() => setTab("Activity")} />}
-        {tab === "Activity" && <ActivityScreen commands={commands} onDecide={decide} />}
-        {tab === "Integrations" && <IntegrationsScreen />}
-        {tab === "More" && <MoreScreen onSignOut={async()=>{ await supabase.auth.signOut(); }} />}
-      </Shell>
-    </SafeAreaProvider>
-  );
+ const [dmLoaded]=useDMSans({DMSans_400Regular,DMSans_500Medium,DMSans_600SemiBold,DMSans_700Bold});const [splashDone,setSplashDone]=useState(false),[checkingUpdate,setCheckingUpdate]=useState(true);const splashScale=useRef(new Animated.Value(1.45)).current,splashOpacity=useRef(new Animated.Value(0)).current;const [tab,setTab]=useState<TabName>("Today"),[commands,setCommands]=useState<VoiceCommand[]>([]),[session,setSession]=useState<Session|null>(null),[authReady,setAuthReady]=useState(false);
+ useEffect(()=>{let alive=true;(async()=>{try{if(!__DEV__&&Updates.isEnabled){const result=await Updates.checkForUpdateAsync();if(result.isAvailable){await Updates.fetchUpdateAsync();await Updates.reloadAsync();return}}}catch(e){console.warn("Update check failed",e)}finally{if(alive)setCheckingUpdate(false)}})();return()=>{alive=false}},[]);
+ useEffect(()=>{Animated.parallel([Animated.timing(splashOpacity,{toValue:1,duration:320,useNativeDriver:true}),Animated.timing(splashScale,{toValue:.92,duration:1200,easing:Easing.out(Easing.cubic),useNativeDriver:true})]).start();const timer=setTimeout(()=>setSplashDone(true),1500);return()=>clearTimeout(timer)},[splashOpacity,splashScale]);
+ useEffect(()=>{supabase.auth.getSession().then(({data})=>{setSession(data.session);setAuthReady(true)});const {data}=supabase.auth.onAuthStateChange((_event,next)=>setSession(next));return()=>data.subscription.unsubscribe()},[]);
+ useEffect(()=>{const restaurantId=process.env.EXPO_PUBLIC_RESTAURANT_ID;if(!session||!restaurantId)return;taurantoApi.listCommands(restaurantId).then(({commands:rows})=>setCommands((rows||[]).map((row:any)=>mapCommand(row,session.user.id)))).catch(()=>{})},[session]);
+ if(checkingUpdate||!splashDone)return <View style={splashStyles.page}><StatusBar style="light"/><Animated.View style={[splashStyles.brand,{opacity:splashOpacity,transform:[{scale:splashScale}]}]}><View style={splashStyles.mark}><Text style={splashStyles.markText}>T</Text></View><Text style={splashStyles.name}>TAURANTO</Text><Text style={splashStyles.sync}>{checkingUpdate?"Checking for updates…":"Restaurant VoiceOps"}</Text></Animated.View></View>;
+ if(!dmLoaded||!authReady)return <View style={{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:colors.cream}}><ActivityIndicator color={colors.leafDeep}/></View>;
+ if(!session)return <SafeAreaProvider><StatusBar style="dark"/><AuthScreen/></SafeAreaProvider>;
+ const addCommand=async(draft:VoiceCommand)=>{const restaurantId=process.env.EXPO_PUBLIC_RESTAURANT_ID;if(!restaurantId)throw new Error("Restaurant workspace is not configured.");const {command}=await taurantoApi.interpret(restaurantId,draft.transcript,"voice");const mapped=mapCommand(command);setCommands(current=>[mapped,...current.filter(item=>item.id!==mapped.id)])};
+ const decide=async(id:string,approved:boolean)=>{const item=commands.find(x=>x.id===id);if(item?.approvalId)await taurantoApi.decide(item.approvalId,approved?"approved":"rejected");setCommands(current=>current.map(entry=>entry.id===id?{...entry,status:approved?"approved":"rejected"}:entry))};
+ return <SafeAreaProvider><StatusBar style="dark"/><Shell tab={tab} onTabChange={setTab} pending={commands.filter(item=>item.status==="pending").length}>{tab==="Today"&&<HomeScreen commands={commands} onCommand={addCommand} onDecide={decide} onOpenActivity={()=>setTab("Activity")}/>} {tab==="Activity"&&<ActivityScreen commands={commands} onDecide={decide}/>} {tab==="Integrations"&&<IntegrationsScreen/>} {tab==="More"&&<MoreScreen onSignOut={async()=>{await supabase.auth.signOut()}}/>}</Shell></SafeAreaProvider>;
 }
 const mapType=(value:string):VoiceCommand["type"]=>value==="menu_availability"?"availability":value==="business_hours"?"hours":value==="pause_orders"?"pause":value.includes("supplier")||value==="purchase_request"?"supplier":value==="announcement"?"announcement":value==="calendar_reminder"?"reminder":"task";
 const targets=(value:string)=>value==="menu_availability"?["Website","Ordering"]:value==="business_hours"?["Website","Calendar","Ordering"]:value.includes("supplier")||value==="purchase_request"?["Vendor","Email"]:["Operations"];
 const mapCommand=(command:any,userId?:string):VoiceCommand=>({id:command.id,transcript:command.transcript,title:command.title,summary:command.summary,type:mapType(command.action_type),status:command.status==="rejected"?"rejected":command.status==="approved"?"approved":command.status==="completed"?"completed":"pending",createdAt:command.created_at,targets:targets(command.action_type),confidence:Number(command.confidence),approvalId:command.approvalId||command.approvals?.find((approval:any)=>approval.status==="pending"&&(!userId||approval.approver_id===userId))?.id});
-
-const splashStyles = StyleSheet.create({
-  page: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#315B3D" },
-  brand: { alignItems: "center" },
-  mark: { width: 92, height: 92, borderRadius: 29, alignItems: "center", justifyContent: "center", backgroundColor: "#F5F0E4", shadowColor: "#102A19", shadowOpacity: 0.24, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 8 },
-  markText: { fontSize: 47, lineHeight: 58, fontWeight: "800", color: "#315B3D" },
-  name: { marginTop: 20, fontSize: 22, fontWeight: "800", letterSpacing: 4.2, color: "#F5F0E4" },
-});
+const splashStyles=StyleSheet.create({page:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:"#315B3D"},brand:{alignItems:"center"},mark:{width:92,height:92,borderRadius:29,alignItems:"center",justifyContent:"center",backgroundColor:"#F5F0E4"},markText:{fontSize:47,lineHeight:58,fontWeight:"800",color:"#315B3D"},name:{marginTop:20,fontSize:22,fontWeight:"800",letterSpacing:4.2,color:"#F5F0E4"},sync:{marginTop:10,fontSize:12,color:"#F5F0E4CC"}});
