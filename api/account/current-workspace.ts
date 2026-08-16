@@ -13,7 +13,8 @@ export default async function handler(req:VercelRequest,res:VercelResponse){
     const memberships=data||[];
     if(!memberships.length) return res.status(404).json({error:"NO_RESTAURANT_MEMBERSHIP"});
     const preferred=String(req.query.preferred||"");
-    const active=memberships.find((m:any)=>m.restaurant_id===preferred)||memberships[0];
+    const active=memberships.find((m:any)=>m.restaurant_id===preferred) ?? memberships.at(0);
+    if(!active) return res.status(404).json({error:"NO_RESTAURANT_MEMBERSHIP"});
     return res.json({restaurantId:active.restaurant_id,membership:active,memberships});
   }catch(e){return fail(res,e)}
 }
