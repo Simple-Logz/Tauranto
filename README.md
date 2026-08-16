@@ -1,11 +1,12 @@
-# Tauranto VoiceOps 0.4
+# Tauranto VoiceOps 0.8
 
 Tauranto is a mobile-first restaurant operations assistant. It captures a spoken or typed instruction, converts it into a structured proposal with OpenAI, requires human approval, and executes only through a configured connector. This repository contains the Expo iOS/Android/web client, Vercel serverless API, Supabase schema/RLS, email notifications, approval workflow, audit log, and execution worker.
 
 ## Safety contract
 
 - `OFF` means no microphone or wake-word engine is running. A truly off app cannot hear and react to speech.
-- `STANDBY` uses the device speech-recognition service while Tauranto remains open and waits for “Hey Tauranto.” The pilot does not upload ambient audio to the Tauranto backend or OpenAI, but the phone's recognition provider may process it.
+- `STANDBY` uses the iOS/Android speech-recognition service while Tauranto remains open and waits for “Hey Tauranto.” Tauranto uploads only the command recorded after activation, although the operating-system recognition provider may process wake-listener audio.
+- Command recording ends after approximately 1.7 seconds of silence. OpenAI transcribes the audio server-side, Tauranto reads it back, and the operator says yes or try again before a proposal is created.
 - Every command is a proposal. The AI never executes tools.
 - Approval is unanimous by default. One rejection blocks the action.
 - Approved jobs execute idempotently; every transition is audited.
@@ -13,13 +14,13 @@ Tauranto is a mobile-first restaurant operations assistant. It captures a spoken
 
 ## Workflow
 
-1. While foregrounded, Expo watches the recognition transcript for the configured wake phrase and collects one instruction.
-2. Speech recognition creates a transcript.
-3. `POST /api/commands/interpret` authenticates membership and asks OpenAI for strict structured output.
-4. Low-confidence or ambiguous proposals stop for clarification.
-5. Valid proposals create approval assignments for every active manager and send email links.
-6. Only unanimous approval creates an execution job.
-7. Vercel Cron invokes `/api/jobs/run`; a connector executes with an idempotency key and records an audit event.
+1. While foregrounded, the native client watches for “Hey Tauranto.”
+2. Tauranto acknowledges activation and records the actual command audio.
+3. Silence detection closes the recording, with a 30-second safety maximum.
+4. `POST /api/audio/transcribe` authenticates the user and transcribes the audio server-side.
+5. Tauranto reads the transcript back and listens for yes or try again.
+6. Only a confirmed transcript reaches `POST /api/commands/interpret`.
+7. The existing clarification, unanimous approval, idempotent execution and audit workflow remains enforced.
 
 ## Accounts needed
 
@@ -86,6 +87,7 @@ Sign in through Supabase and send its access token as `Authorization: Bearer <to
 
 ## API
 
+- `POST /api/audio/transcribe` — authenticated command-audio transcription
 - `POST /api/commands/interpret` — AI proposal, clarification gate, approvals, notifications
 - `GET /api/commands/list?restaurantId=...` — queue
 - `POST /api/approvals/decision` — authenticated manager decision

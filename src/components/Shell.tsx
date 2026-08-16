@@ -22,7 +22,7 @@ export function Shell({ children, tab, onTabChange, pending }: { children: React
           const selected = item.name === tab;
           return <Pressable key={item.name} onPress={() => onTabChange(item.name)} style={styles.navItem} accessibilityRole="tab" accessibilityState={{ selected }}>
             <View style={[styles.iconWrap, selected && styles.iconWrapActive]}>
-              <Ionicons name={selected ? item.active : item.icon} size={23} color={selected ? colors.leafDeep : colors.muted} />
+              <Ionicons name={selected ? item.active : item.icon} size={26} color={selected ? colors.leafDeep : colors.muted} />
               {item.name === "Activity" && pending > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{pending}</Text></View>}
             </View>
             <Text style={[styles.navLabel, selected && styles.navLabelActive]}>{item.name}</Text>
@@ -36,8 +36,8 @@ export function Shell({ children, tab, onTabChange, pending }: { children: React
 const styles = StyleSheet.create({
   shell: { flex: 1, backgroundColor: colors.cream }, webShell: { width: 430, maxWidth: "100%", alignSelf: "center", borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.line }, content: { flex: 1 },
   nav: { flexDirection: "row", paddingTop: 10, paddingHorizontal: 8, backgroundColor: colors.paper, borderTopWidth: 1, borderTopColor: colors.line, ...shadow },
-  navItem: { flex: 1, minHeight: 48, alignItems: "center", justifyContent: "center", gap: 3 }, iconWrap: { width: 47, height: 30, borderRadius: 16, alignItems: "center", justifyContent: "center" }, iconWrapActive: { backgroundColor: colors.leafPale },
-  navLabel: { fontFamily: "DMSans_600SemiBold", fontSize: 11, color: colors.muted }, navLabelActive: { color: colors.leafDeep },
+  navItem: { flex: 1, minHeight: 58, alignItems: "center", justifyContent: "center", gap: 4 }, iconWrap: { width: 52, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" }, iconWrapActive: { backgroundColor: colors.leafPale },
+  navLabel: { fontFamily: "DMSans_700Bold", fontSize: 13, color: colors.muted }, navLabelActive: { color: colors.leafDeep },
   badge: { position: "absolute", right: 3, top: -3, minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8, backgroundColor: colors.tomato, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.paper },
   badgeText: { color: "white", fontFamily: "DMSans_700Bold", fontSize: 8 },
 });

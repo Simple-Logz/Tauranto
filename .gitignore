@@ -2,13 +2,12 @@ node_modules/
 .expo/
 dist/
 web-build/
-.vercel/
-
 .env
 .env.local
 .env.*.local
 env.local
-
+env.*.local
+.vercel/
 *.jks
 *.p8
 *.p12
