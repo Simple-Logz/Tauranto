@@ -1,33 +1,59 @@
 {
   "expo": {
     "name": "Tauranto",
-    "slug": "tauranto-restaurant-voiceops",
-    "version": "0.4.0",
+    "slug": "tauranto",
+    "version": "0.8.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "tauranto",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bluelink.tauranto",
+      "buildNumber": "8",
       "infoPlist": {
-        "NSSpeechRecognitionUsageDescription": "Tauranto uses speech recognition to turn restaurant instructions into reviewable actions.",
-        "NSMicrophoneUsageDescription": "Tauranto uses the microphone only while foreground wake standby or command capture is enabled."
+        "NSSpeechRecognitionUsageDescription": "Allow Tauranto to convert restaurant commands into text.",
+        "NSMicrophoneUsageDescription": "Allow Tauranto to hear restaurant commands while wake standby or command capture is active."
       }
     },
     "android": {
       "package": "com.bluelink.tauranto",
-      "permissions": ["android.permission.RECORD_AUDIO"],
-      "adaptiveIcon": { "backgroundColor": "#E8F0DB" }
+      "versionCode": 9,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#E8F0DB"
+      }
     },
     "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Tauranto to capture a restaurant command after wake activation."
+        }
+      ],
       [
         "expo-speech-recognition",
         {
           "microphonePermission": "Allow Tauranto to hear restaurant commands while wake standby or command capture is active.",
           "speechRecognitionPermission": "Allow Tauranto to convert restaurant commands into text."
         }
-      ]
+      ],
+      "expo-font"
     ],
-    "androidStatusBar": { "backgroundColor": "#FAF8F1", "barStyle": "dark-content" }
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "androidStatusBar": {
+      "backgroundColor": "#FAF8F1",
+      "barStyle": "dark-content"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "fbc1e404-3eeb-4731-a491-0b47f03bb449"
+      }
+    },
+    "owner": "tauranto-01"
   }
 }
