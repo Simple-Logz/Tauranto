@@ -1,43 +1,11 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, shadow } from "../theme/tokens";
+import { colors } from "../theme/tokens";
 import { TabName } from "../../App";
 
-const tabs: { name: TabName; icon: keyof typeof Ionicons.glyphMap; active: keyof typeof Ionicons.glyphMap }[] = [
-  { name: "Today", icon: "home-outline", active: "home" },
-  { name: "Activity", icon: "pulse-outline", active: "pulse" },
-  { name: "Integrations", icon: "grid-outline", active: "grid" },
-  { name: "More", icon: "options-outline", active: "options" },
-];
-
-export function Shell({ children, tab, onTabChange, pending }: { children: React.ReactNode; tab: TabName; onTabChange: (tab: TabName) => void; pending: number }) {
-  const insets = useSafeAreaInsets();
-  return (
-    <View style={[styles.shell, Platform.OS === "web" && styles.webShell]}>
-      <View style={styles.content}>{children}</View>
-      <View style={[styles.nav, { paddingBottom: Math.max(insets.bottom, 9) }]}>
-        {tabs.map((item) => {
-          const selected = item.name === tab;
-          return <Pressable key={item.name} onPress={() => onTabChange(item.name)} style={styles.navItem} accessibilityRole="tab" accessibilityState={{ selected }}>
-            <View style={[styles.iconWrap, selected && styles.iconWrapActive]}>
-              <Ionicons name={selected ? item.active : item.icon} size={26} color={selected ? colors.leafDeep : colors.muted} />
-              {item.name === "Activity" && pending > 0 && <View style={styles.badge}><Text style={styles.badgeText}>{pending}</Text></View>}
-            </View>
-            <Text style={[styles.navLabel, selected && styles.navLabelActive]}>{item.name}</Text>
-          </Pressable>;
-        })}
-      </View>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: colors.cream }, webShell: { width: 430, maxWidth: "100%", alignSelf: "center", borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.line }, content: { flex: 1 },
-  nav: { flexDirection: "row", paddingTop: 10, paddingHorizontal: 8, backgroundColor: colors.paper, borderTopWidth: 1, borderTopColor: colors.line, ...shadow },
-  navItem: { flex: 1, minHeight: 58, alignItems: "center", justifyContent: "center", gap: 4 }, iconWrap: { width: 52, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" }, iconWrapActive: { backgroundColor: colors.leafPale },
-  navLabel: { fontFamily: "DMSans_700Bold", fontSize: 13, color: colors.muted }, navLabelActive: { color: colors.leafDeep },
-  badge: { position: "absolute", right: 3, top: -3, minWidth: 16, height: 16, paddingHorizontal: 4, borderRadius: 8, backgroundColor: colors.tomato, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.paper },
-  badgeText: { color: "white", fontFamily: "DMSans_700Bold", fontSize: 8 },
-});
+const tabs:{name:TabName;label:string;icon:keyof typeof Ionicons.glyphMap;active:keyof typeof Ionicons.glyphMap}[]=[
+{name:"Today",label:"Dashboard",icon:"home-outline",active:"home"},{name:"Activity",label:"Approvals",icon:"shield-checkmark-outline",active:"shield-checkmark"},{name:"Integrations",label:"Integrations",icon:"git-network-outline",active:"git-network"},{name:"More",label:"More",icon:"menu-outline",active:"menu"}];
+export function Shell({children,tab,onTabChange,pending}:{children:React.ReactNode;tab:TabName;onTabChange:(tab:TabName)=>void;pending:number}){const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),tablet=width>=768;return <View style={s.shell}>{tablet&&<View style={[s.sidebar,{paddingTop:Math.max(insets.top,22)}]}><View style={s.brand}><View style={s.brandMark}><Ionicons name="mic" size={19} color="white"/></View><Text style={s.brandText}>Tauranto</Text></View><View style={s.sideNav}>{tabs.map(item=>{const selected=item.name===tab;return <Pressable key={item.name} onPress={()=>onTabChange(item.name)} style={[s.sideItem,selected&&s.sideActive]}><Ionicons name={selected?item.active:item.icon} size={20} color={selected?"white":"#D7E8DB"}/><Text style={[s.sideLabel,selected&&s.sideLabelActive]}>{item.label}</Text>{item.name==="Activity"&&pending>0&&<View style={s.sideBadge}><Text style={s.sideBadgeText}>{pending}</Text></View>}</Pressable>})}</View><View style={s.sideBottom}><Text style={s.restaurant}>Restaurant workspace</Text><Text style={s.owner}>Owner account</Text></View></View>}<View style={s.content}>{children}</View>{!tablet&&<View style={[s.nav,{paddingBottom:Math.max(insets.bottom,7)}]}>{tabs.map(item=>{const selected=item.name===tab;return <Pressable key={item.name} onPress={()=>onTabChange(item.name)} style={s.navItem}><View style={[s.iconWrap,selected&&s.iconActive]}><Ionicons name={selected?item.active:item.icon} size={22} color={selected?colors.leafDeep:colors.muted}/>{item.name==="Activity"&&pending>0&&<View style={s.badge}><Text style={s.badgeText}>{pending}</Text></View>}</View><Text style={[s.navLabel,selected&&s.navLabelActive]}>{item.label}</Text></Pressable>})}</View>}</View>}
+const s=StyleSheet.create({shell:{flex:1,flexDirection:"row",backgroundColor:"#F7F9F6"},content:{flex:1},sidebar:{width:220,backgroundColor:"#123D25",paddingHorizontal:15,paddingBottom:20},brand:{height:64,flexDirection:"row",alignItems:"center",gap:10,paddingHorizontal:8},brandMark:{width:34,height:34,borderRadius:10,backgroundColor:"#1E7A43",alignItems:"center",justifyContent:"center"},brandText:{fontFamily:"PlusJakartaSans_700Bold",fontSize:21,color:"white"},sideNav:{gap:5,marginTop:18},sideItem:{height:48,borderRadius:11,flexDirection:"row",alignItems:"center",gap:11,paddingHorizontal:13},sideActive:{backgroundColor:"#208B49"},sideLabel:{fontFamily:"PlusJakartaSans_600SemiBold",fontSize:14,color:"#D7E8DB"},sideLabelActive:{color:"white"},sideBadge:{marginLeft:"auto",minWidth:22,height:22,borderRadius:11,backgroundColor:"white",alignItems:"center",justifyContent:"center"},sideBadgeText:{fontFamily:"PlusJakartaSans_700Bold",fontSize:10,color:"#14552E"},sideBottom:{marginTop:"auto",borderTopWidth:1,borderTopColor:"#FFFFFF20",paddingTop:17,paddingHorizontal:8},restaurant:{fontFamily:"PlusJakartaSans_600SemiBold",fontSize:12,color:"white"},owner:{fontFamily:"PlusJakartaSans_400Regular",fontSize:11,color:"#B9D0C0",marginTop:4},nav:{position:"absolute",left:0,right:0,bottom:0,flexDirection:"row",paddingTop:7,paddingHorizontal:5,backgroundColor:"white",borderTopWidth:1,borderTopColor:"#E5EAE5"},navItem:{flex:1,minHeight:57,alignItems:"center",justifyContent:"center",gap:2},iconWrap:{width:42,height:30,borderRadius:15,alignItems:"center",justifyContent:"center"},iconActive:{backgroundColor:"#E8F4EA"},navLabel:{fontFamily:"PlusJakartaSans_500Medium",fontSize:9,color:"#68736B"},navLabelActive:{fontFamily:"PlusJakartaSans_700Bold",color:"#166B37"},badge:{position:"absolute",right:0,top:-4,minWidth:16,height:16,borderRadius:8,backgroundColor:"#E76A42",alignItems:"center",justifyContent:"center"},badgeText:{fontFamily:"PlusJakartaSans_700Bold",fontSize:8,color:"white"}});
