@@ -1,7 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient, type User } from "@supabase/supabase-js";
 
-export const admin = () => createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
+export const admin = () => {
+  const url=process.env.SUPABASE_URL||process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if(!url) throw new Error("Server Supabase URL is not configured in Vercel.");
+  if(!key) throw new Error("Server Supabase service role key is not configured in Vercel.");
+  return createClient(url,key,{auth:{persistSession:false}});
+};
 
 export async function requireUser(req: VercelRequest): Promise<User> {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
