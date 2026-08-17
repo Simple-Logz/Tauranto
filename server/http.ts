@@ -17,8 +17,23 @@ export async function requireUser(req: VercelRequest): Promise<User> {
   return data.user;
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const e=error as Record<string,unknown>;
+    for (const key of ["message","error_description","details","hint","code"]) {
+      const value=e[key];
+      if (typeof value === "string" && value.trim()) return value;
+    }
+    try { const json=JSON.stringify(error); if(json&&json!=="{}") return json; } catch {}
+  }
+  return "SERVER_ERROR";
+}
+
 export function fail(res: VercelResponse, error: unknown) {
-  const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
+  const message = errorMessage(error);
+  console.error("Tauranto API failure", error);
   const status = message === "UNAUTHORIZED" ? 401 : message === "FORBIDDEN" ? 403 : 400;
   return res.status(status).json({ error: message });
 }
