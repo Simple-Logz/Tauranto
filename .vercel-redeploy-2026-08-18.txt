@@ -1,0 +1,1 @@
+Production recovery marker. Forces Vercel to deploy the current main branch, where src/screens/TablesScreen.tsx contains the restored implementation rather than the broken PLACEHOLDER production commit.
