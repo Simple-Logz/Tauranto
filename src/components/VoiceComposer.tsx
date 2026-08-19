@@ -73,7 +73,7 @@ export function VoiceComposer({onCommand,enabled,onEnabledChange,onStatusChange,
   },[setM,startRecognition]);
 
   useSpeechRecognitionEvent('start',()=>{recognizing.current=true;console.info('[voice] recognition started',{phase:phase.current})});
-  useSpeechRecognitionEvent('end',()=>{recognizing.current=false;console.info('[voice] recognition ended',{phase:phase.current});if(enabledRef.current&&!submitting.current)scheduleStandby()});
+  useSpeechRecognitionEvent('end',()=>{recognizing.current=false;console.info('[voice] recognition ended',{phase:phase.current});if(enabledRef.current&&!submitting.current){const nextPhase=phase.current==='command'?'command':'standby';clearRestart();restartTimer.current=setTimeout(()=>void startRecognition(nextPhase),450)}});
   useSpeechRecognitionEvent('result',event=>{
     const heard=String(event.results?.[0]?.transcript||'').trim();if(!heard||submitting.current)return;
     if(phase.current==='standby'){
@@ -94,7 +94,7 @@ export function VoiceComposer({onCommand,enabled,onEnabledChange,onStatusChange,
     if(event.error==='aborted'&&submitting.current)return;
     if(event.error==='no-speech'||event.error==='speech-timeout'||event.error==='aborted'||event.error==='busy'){
       console.warn('[voice] recoverable recognition event',event);
-      if(enabledRef.current&&!submitting.current)scheduleStandby(event.error==='busy'?900:450);return;
+      if(enabledRef.current&&!submitting.current){const nextPhase=phase.current==='command'?'command':'standby';clearRestart();restartTimer.current=setTimeout(()=>void startRecognition(nextPhase),event.error==='busy'?900:450)}return;
     }
     phase.current='off';
     setM('error',event.error==='not-allowed'?'Microphone permission is blocked. Allow microphone and speech recognition in device settings.':`Voice recognition failed: ${event.message||event.error}`);
