@@ -44,7 +44,7 @@ export function HomeScreen({commands,onOpenActivity,voiceEnabled,onToggleVoice,v
 
    <View style={s.sectionHeader}><View><Text style={s.kicker}>QUICK ACCESS</Text><Text style={s.sectionTitle}>Keep things moving</Text></View></View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.actionRail}>
-    <ActionCard icon="shield-checkmark-outline" title="Approvals" detail={pending.length?`${pending.length} waiting":"All clear"} onPress={onOpenActivity}/>
+    <ActionCard icon="shield-checkmark-outline" title="Approvals" detail={pending.length?`${pending.length} waiting`:"All clear"} onPress={onOpenActivity}/>
     <ActionCard icon="restaurant-outline" title="Operations" detail="Restaurant actions" onPress={onOpenActivity}/>
     <ActionCard icon="checkmark-done-outline" title="Completed" detail={`${completed.length} finished`} onPress={onOpenActivity}/>
    </ScrollView>
