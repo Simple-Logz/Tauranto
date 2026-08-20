@@ -7,54 +7,40 @@ import {VoiceCommand} from "../lib/models";
 type Props={commands:VoiceCommand[];onDecide:(id:string,approved:boolean)=>void;onOpenActivity:()=>void;onOpenVoice:()=>void};
 
 export function HomeScreen({commands,onDecide,onOpenActivity,onOpenVoice}:Props){
-  const insets=useSafeAreaInsets();
-  const {width}=useWindowDimensions();
-  const compact=width<700;
-  const pending=commands.filter(x=>x.status==="pending").slice(0,2);
-  return <ScrollView style={s.page} showsVerticalScrollIndicator={false} contentContainerStyle={[s.content,{paddingTop:insets.top+12,maxWidth:compact?520:760,alignSelf:"center",width:"100%"}]}>
-    <View style={s.header}>
-      <View style={s.menuCircle}><Ionicons name="menu" size={20} color="#17231F"/></View>
-      <View style={s.headerCopy}><Text style={s.eyebrow}>TAURANTO</Text><Text style={s.greeting}>Good morning 👋</Text></View>
-      <Pressable onPress={onOpenActivity} style={s.bell}><Ionicons name="notifications-outline" size={19} color="#17231F"/>{pending.length>0&&<View style={s.badge}><Text style={s.badgeText}>{pending.length}</Text></View>}</Pressable>
-    </View>
+ const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),pending=commands.filter(x=>x.status==="pending").slice(0,3),wide=width>720;
+ return <ScrollView style={s.page} showsVerticalScrollIndicator={false} contentContainerStyle={[s.content,{paddingTop:insets.top+18,maxWidth:wide?900:560,alignSelf:"center",width:"100%"}]}>
+  <View style={s.top}><View><Text style={s.brand}>Tauranto</Text><Text style={s.place}>Restaurant Operations</Text></View><Pressable onPress={onOpenActivity} style={s.activity}><Ionicons name="notifications-outline" size={21} color="#201D1A"/>{pending.length>0&&<View style={s.dot}/>}</Pressable></View>
 
-    <View style={s.voiceCard}>
-      <View style={s.voiceCopy}>
-        <Text style={s.voiceKicker}>RESTAURANT OPERATIONS</Text>
-        <Text style={s.voiceTitle}>What needs to happen?</Text>
-        <Text style={s.voiceText}>Speak a command and Tauranto will organize the next step.</Text>
-        <Pressable onPress={onOpenVoice} style={s.speakButton}><Ionicons name="mic" size={18} color="#fff"/><Text style={s.speakText}>Tap to speak</Text></Pressable>
-      </View>
-      <View style={s.voiceArt}><View style={s.waveSmall}/><View style={s.micOrb}><Ionicons name="mic" size={29} color="#fff"/></View><View style={s.waveTall}/></View>
-    </View>
+  <View style={s.welcome}><Text style={s.hello}>Good morning</Text><Text style={s.question}>What do you need{wide?" ":"\n"}Tauranto to do?</Text></View>
 
-    <View style={s.sectionRow}><Text style={s.sectionTitle}>Quick actions</Text><Text style={s.sectionLink}>See all</Text></View>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.quickRow}>
-      <Quick icon="restaurant-outline" title="Update menu" tint="#EAF6ED" onPress={onOpenVoice}/>
-      <Quick icon="pause-circle-outline" title="Mark unavailable" tint="#FFF4D9" onPress={onOpenVoice}/>
-      <Quick icon="calendar-outline" title="Schedule closure" tint="#EAF2F7" onPress={onOpenVoice}/>
-      <Quick icon="call-outline" title="Contact supplier" tint="#EDF5EA" onPress={onOpenVoice}/>
-    </ScrollView>
+  <Pressable onPress={onOpenVoice} style={s.commandBox}>
+   <View style={s.mic}><Ionicons name="mic" size={28} color="#fff"/></View>
+   <View style={{flex:1}}><Text style={s.commandTitle}>Speak to Tauranto</Text><Text style={s.commandHint}>Tap the microphone and give a restaurant command</Text></View>
+   <Ionicons name="chevron-forward" size={19} color="#9B8D82"/>
+  </Pressable>
 
-    <View style={s.sectionRow}><View><Text style={s.sectionTitle}>Needs your approval</Text><Text style={s.sectionSub}>{pending.length?`${pending.length} waiting for you`:"You're all caught up"}</Text></View><Pressable onPress={onOpenActivity}><Text style={s.sectionLink}>View all</Text></Pressable></View>
-    {pending.length?pending.map(c=><View key={c.id} style={s.approvalCard}>
-      <View style={s.approvalTop}><View style={s.actionIcon}><Ionicons name="sparkles-outline" size={19} color="#315B49"/></View><View style={{flex:1}}><Text numberOfLines={1} style={s.approvalTitle}>{c.title||"Restaurant action"}</Text><Text numberOfLines={2} style={s.approvalCopy}>{c.summary||c.transcript}</Text></View></View>
-      <View style={s.decisionRow}><Pressable onPress={()=>onDecide(c.id,false)} style={s.secondaryButton}><Text style={s.secondaryText}>Not now</Text></Pressable><Pressable onPress={()=>onDecide(c.id,true)} style={s.primaryButton}><Ionicons name="checkmark" size={16} color="#fff"/><Text style={s.primaryText}>Approve</Text></Pressable></View>
-    </View>):<View style={s.emptyCard}><View style={s.emptyIcon}><Ionicons name="checkmark" size={22} color="#315B49"/></View><View><Text style={s.emptyTitle}>Nothing waiting</Text><Text style={s.emptyText}>New approvals will show up here.</Text></View></View>}
+  <View style={s.chips}><Action icon="restaurant-outline" label="Menu" onPress={onOpenVoice}/><Action icon="ban-outline" label="Unavailable" onPress={onOpenVoice}/><Action icon="calendar-outline" label="Closure" onPress={onOpenVoice}/><Action icon="call-outline" label="Supplier" onPress={onOpenVoice}/></View>
 
-    <View style={s.sectionRow}><Text style={s.sectionTitle}>Today at a glance</Text></View>
-    <View style={s.statsRow}><Stat icon="receipt-outline" value={`${commands.length}`} label="Commands"/><Stat icon="time-outline" value={`${pending.length}`} label="Pending"/><Stat icon="checkmark-circle-outline" value={`${commands.filter(x=>x.status!=="pending").length}`} label="Handled"/></View>
-  </ScrollView>
+  <View style={s.rule}/>
+  <View style={s.heading}><View><Text style={s.headingTitle}>Waiting on you</Text><Text style={s.headingSub}>{pending.length?`${pending.length} ${pending.length===1?"decision":"decisions"} to make`:"No approvals waiting"}</Text></View><Pressable onPress={onOpenActivity}><Text style={s.view}>Activity</Text></Pressable></View>
+
+  {pending.length?pending.map((c,i)=><View key={c.id} style={s.item}>
+   <View style={s.number}><Text style={s.numberText}>{i+1}</Text></View>
+   <View style={s.itemBody}><Text style={s.itemTitle}>{c.title||"Restaurant action"}</Text><Text numberOfLines={2} style={s.itemCopy}>{c.summary||c.transcript}</Text><View style={s.buttons}><Pressable onPress={()=>onDecide(c.id,false)} style={s.no}><Text style={s.noText}>Decline</Text></Pressable><Pressable onPress={()=>onDecide(c.id,true)} style={s.yes}><Text style={s.yesText}>Approve</Text><Ionicons name="arrow-forward" size={14} color="#fff"/></Pressable></View></View>
+  </View>):<View style={s.clear}><Ionicons name="checkmark-circle" size={28} color="#47745D"/><View><Text style={s.clearTitle}>You're clear</Text><Text style={s.clearCopy}>Nothing needs your approval right now.</Text></View></View>}
+
+  <View style={s.rule}/><Text style={s.headingTitle}>Recent operations</Text>
+  <View style={s.summary}><View><Text style={s.big}>{commands.length}</Text><Text style={s.label}>commands</Text></View><View style={s.vertical}/><View><Text style={s.big}>{commands.filter(x=>x.status!=="pending").length}</Text><Text style={s.label}>completed</Text></View><View style={s.vertical}/><View><Text style={s.big}>{pending.length}</Text><Text style={s.label}>pending</Text></View></View>
+ </ScrollView>
 }
 
-function Quick({icon,title,tint,onPress}:{icon:keyof typeof Ionicons.glyphMap;title:string;tint:string;onPress:()=>void}){return <Pressable onPress={onPress} style={[s.quick,{backgroundColor:tint}]}><View style={s.quickIcon}><Ionicons name={icon} size={22} color="#213C31"/></View><Text style={s.quickTitle}>{title}</Text><Ionicons name="arrow-forward" size={15} color="#65736D"/></Pressable>}
-function Stat({icon,value,label}:{icon:keyof typeof Ionicons.glyphMap;value:string;label:string}){return <View style={s.stat}><Ionicons name={icon} size={18} color="#315B49"/><Text style={s.statValue}>{value}</Text><Text style={s.statLabel}>{label}</Text></View>}
+function Action({icon,label,onPress}:{icon:keyof typeof Ionicons.glyphMap;label:string;onPress:()=>void}){return <Pressable onPress={onPress} style={s.chip}><Ionicons name={icon} size={17} color="#55483F"/><Text style={s.chipText}>{label}</Text></Pressable>}
 
 const s=StyleSheet.create({
-  page:{flex:1,backgroundColor:"#FBFCF9"},content:{paddingHorizontal:18,paddingBottom:130},
-  header:{height:58,flexDirection:"row",alignItems:"center",marginBottom:18},menuCircle:{width:42,height:42,borderRadius:15,backgroundColor:"#F0F3EE",alignItems:"center",justifyContent:"center"},headerCopy:{flex:1,marginLeft:12},eyebrow:{fontFamily:"NunitoSans_900Black",fontSize:9,letterSpacing:1.5,color:"#77837D"},greeting:{fontFamily:"NunitoSans_900Black",fontSize:20,color:"#17231F",letterSpacing:-.5,marginTop:1},bell:{width:42,height:42,borderRadius:15,backgroundColor:"#F0F3EE",alignItems:"center",justifyContent:"center"},badge:{position:"absolute",right:3,top:2,minWidth:17,height:17,borderRadius:9,backgroundColor:"#E9823A",alignItems:"center",justifyContent:"center",paddingHorizontal:4},badgeText:{fontFamily:"NunitoSans_900Black",fontSize:9,color:"#fff"},
-  voiceCard:{minHeight:210,borderRadius:28,backgroundColor:"#E8F2E3",padding:22,flexDirection:"row",overflow:"hidden"},voiceCopy:{flex:1,zIndex:2},voiceKicker:{fontFamily:"NunitoSans_900Black",fontSize:9,letterSpacing:1.4,color:"#56705F"},voiceTitle:{fontFamily:"NunitoSans_900Black",fontSize:29,lineHeight:32,color:"#17231F",letterSpacing:-1,marginTop:7,maxWidth:310},voiceText:{fontFamily:"NunitoSans_600SemiBold",fontSize:12.5,lineHeight:18,color:"#617069",maxWidth:300,marginTop:8},speakButton:{alignSelf:"flex-start",height:43,borderRadius:14,backgroundColor:"#213F33",paddingHorizontal:15,flexDirection:"row",alignItems:"center",gap:7,marginTop:17},speakText:{fontFamily:"NunitoSans_900Black",fontSize:12,color:"#fff"},voiceArt:{width:115,alignItems:"center",justifyContent:"center",flexDirection:"row",gap:5,opacity:.96},micOrb:{width:76,height:76,borderRadius:38,backgroundColor:"#6EA85F",alignItems:"center",justifyContent:"center",shadowColor:"#456F3D",shadowOpacity:.18,shadowRadius:16,shadowOffset:{width:0,height:8}},waveSmall:{width:5,height:31,borderRadius:4,backgroundColor:"#A7CF9C"},waveTall:{width:5,height:52,borderRadius:4,backgroundColor:"#8FC27F"},
-  sectionRow:{marginTop:25,marginBottom:11,flexDirection:"row",justifyContent:"space-between",alignItems:"flex-end"},sectionTitle:{fontFamily:"NunitoSans_900Black",fontSize:19,color:"#17231F",letterSpacing:-.5},sectionSub:{fontFamily:"NunitoSans_600SemiBold",fontSize:11,color:"#7B8781",marginTop:2},sectionLink:{fontFamily:"NunitoSans_700Bold",fontSize:11,color:"#66736D"},quickRow:{gap:10,paddingRight:18},quick:{width:145,height:128,borderRadius:24,padding:14,justifyContent:"space-between"},quickIcon:{width:38,height:38,borderRadius:13,backgroundColor:"rgba(255,255,255,.72)",alignItems:"center",justifyContent:"center"},quickTitle:{fontFamily:"NunitoSans_900Black",fontSize:13,lineHeight:16,color:"#17231F",maxWidth:100},
-  approvalCard:{backgroundColor:"#fff",borderRadius:24,padding:16,marginBottom:10,shadowColor:"#15241E",shadowOpacity:.06,shadowRadius:18,shadowOffset:{width:0,height:7},elevation:2},approvalTop:{flexDirection:"row",gap:12,alignItems:"flex-start"},actionIcon:{width:42,height:42,borderRadius:14,backgroundColor:"#EDF5EA",alignItems:"center",justifyContent:"center"},approvalTitle:{fontFamily:"NunitoSans_900Black",fontSize:14,color:"#17231F"},approvalCopy:{fontFamily:"NunitoSans_600SemiBold",fontSize:11.5,lineHeight:16,color:"#748079",marginTop:3},decisionRow:{flexDirection:"row",gap:8,justifyContent:"flex-end",marginTop:15},secondaryButton:{height:38,borderRadius:13,paddingHorizontal:15,backgroundColor:"#F3F4F1",alignItems:"center",justifyContent:"center"},secondaryText:{fontFamily:"NunitoSans_800ExtraBold",fontSize:11,color:"#53615B"},primaryButton:{height:38,borderRadius:13,paddingHorizontal:15,backgroundColor:"#294D3D",flexDirection:"row",gap:5,alignItems:"center",justifyContent:"center"},primaryText:{fontFamily:"NunitoSans_900Black",fontSize:11,color:"#fff"},emptyCard:{backgroundColor:"#fff",borderRadius:22,padding:16,flexDirection:"row",alignItems:"center",gap:12},emptyIcon:{width:42,height:42,borderRadius:14,backgroundColor:"#EAF4E7",alignItems:"center",justifyContent:"center"},emptyTitle:{fontFamily:"NunitoSans_900Black",fontSize:13,color:"#17231F"},emptyText:{fontFamily:"NunitoSans_600SemiBold",fontSize:11,color:"#7B8781",marginTop:2},
-  statsRow:{flexDirection:"row",gap:9},stat:{flex:1,minHeight:98,borderRadius:21,backgroundColor:"#F0F4EE",padding:13,justifyContent:"space-between"},statValue:{fontFamily:"NunitoSans_900Black",fontSize:22,color:"#17231F",letterSpacing:-.7},statLabel:{fontFamily:"NunitoSans_700Bold",fontSize:10,color:"#728078"}
+ page:{flex:1,backgroundColor:"#FCFAF7"},content:{paddingHorizontal:22,paddingBottom:130},top:{flexDirection:"row",alignItems:"center",justifyContent:"space-between"},brand:{fontFamily:"NunitoSans_900Black",fontSize:20,color:"#201D1A",letterSpacing:-.5},place:{fontFamily:"NunitoSans_700Bold",fontSize:9,color:"#A06A43",letterSpacing:1.2,textTransform:"uppercase",marginTop:1},activity:{width:42,height:42,borderRadius:21,borderWidth:1,borderColor:"#E8E0D9",alignItems:"center",justifyContent:"center",backgroundColor:"#fff"},dot:{position:"absolute",right:7,top:7,width:7,height:7,borderRadius:4,backgroundColor:"#D76C2F"},
+ welcome:{marginTop:46,marginBottom:26},hello:{fontFamily:"NunitoSans_700Bold",fontSize:14,color:"#8A7C72"},question:{fontFamily:"NunitoSans_900Black",fontSize:38,lineHeight:42,color:"#201D1A",letterSpacing:-1.6,marginTop:5},
+ commandBox:{backgroundColor:"#2C2926",borderRadius:24,minHeight:94,padding:15,flexDirection:"row",alignItems:"center",gap:14},mic:{width:58,height:58,borderRadius:29,backgroundColor:"#E37A38",alignItems:"center",justifyContent:"center"},commandTitle:{fontFamily:"NunitoSans_900Black",fontSize:15,color:"#fff"},commandHint:{fontFamily:"NunitoSans_600SemiBold",fontSize:11,lineHeight:15,color:"#C8BFB8",marginTop:3,maxWidth:310},chips:{flexDirection:"row",flexWrap:"wrap",gap:8,marginTop:12},chip:{height:39,borderRadius:20,borderWidth:1,borderColor:"#E5DDD5",backgroundColor:"#fff",paddingHorizontal:13,flexDirection:"row",alignItems:"center",gap:6},chipText:{fontFamily:"NunitoSans_800ExtraBold",fontSize:11,color:"#55483F"},
+ rule:{height:1,backgroundColor:"#EAE3DC",marginVertical:31},heading:{flexDirection:"row",justifyContent:"space-between",alignItems:"flex-end",marginBottom:14},headingTitle:{fontFamily:"NunitoSans_900Black",fontSize:20,color:"#201D1A",letterSpacing:-.5},headingSub:{fontFamily:"NunitoSans_600SemiBold",fontSize:11,color:"#95877D",marginTop:2},view:{fontFamily:"NunitoSans_800ExtraBold",fontSize:11,color:"#B25D2D"},
+ item:{flexDirection:"row",gap:13,paddingVertical:17,borderBottomWidth:1,borderBottomColor:"#ECE5DE"},number:{width:31,height:31,borderRadius:16,backgroundColor:"#F2E7DC",alignItems:"center",justifyContent:"center"},numberText:{fontFamily:"NunitoSans_900Black",fontSize:11,color:"#A65C31"},itemBody:{flex:1},itemTitle:{fontFamily:"NunitoSans_900Black",fontSize:14,color:"#29231F"},itemCopy:{fontFamily:"NunitoSans_600SemiBold",fontSize:11.5,lineHeight:17,color:"#83776E",marginTop:3},buttons:{flexDirection:"row",gap:7,marginTop:12},no:{height:35,borderRadius:18,borderWidth:1,borderColor:"#DDD3CB",paddingHorizontal:14,alignItems:"center",justifyContent:"center"},noText:{fontFamily:"NunitoSans_800ExtraBold",fontSize:10.5,color:"#685D55"},yes:{height:35,borderRadius:18,backgroundColor:"#3C624F",paddingHorizontal:15,flexDirection:"row",gap:6,alignItems:"center",justifyContent:"center"},yesText:{fontFamily:"NunitoSans_900Black",fontSize:10.5,color:"#fff"},clear:{flexDirection:"row",alignItems:"center",gap:11,paddingVertical:12},clearTitle:{fontFamily:"NunitoSans_900Black",fontSize:13,color:"#29231F"},clearCopy:{fontFamily:"NunitoSans_600SemiBold",fontSize:11,color:"#8C8178",marginTop:1},
+ summary:{marginTop:14,backgroundColor:"#F3EEE8",borderRadius:20,padding:18,flexDirection:"row",alignItems:"center",justifyContent:"space-around"},big:{fontFamily:"NunitoSans_900Black",fontSize:25,color:"#2A2521",textAlign:"center"},label:{fontFamily:"NunitoSans_700Bold",fontSize:9.5,color:"#8A7C72",textAlign:"center",marginTop:1},vertical:{width:1,height:35,backgroundColor:"#DDD3CA"}
 });
