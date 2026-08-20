@@ -1,25 +1,95 @@
-import React,{useState} from "react";
-import {Image,ImageBackground,Modal,Pressable,ScrollView,StyleSheet,Text,useWindowDimensions,View} from "react-native";
+import React from "react";
+import {ImageBackground,Pressable,ScrollView,StyleSheet,Text,useWindowDimensions,View} from "react-native";
 import {Ionicons} from "@expo/vector-icons";
 import {useSafeAreaInsets} from "react-native-safe-area-context";
 import {VoiceCommand} from "../lib/models";
+
 type Props={commands:VoiceCommand[];onDecide:(id:string,approved:boolean)=>void;onOpenActivity:()=>void;onOpenVoice:()=>void};
-const C={ink:"#292925",paper:"#F6F3ED",card:"#FFFDF9",green:"#3E684B",orange:"#E98247",muted:"#77746E",line:"#E7E0D7"};
+
+const C={ink:"#242421",paper:"#F6F3ED",card:"#FFFDF9",green:"#3E684B",orange:"#E98247",muted:"#6E6B66",line:"#DED8CF"};
 const hero="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1400&q=90";
-const photos=[
- {uri:"https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=900&q=86",label:"Kitchen coordination"},
- {uri:"https://images.unsplash.com/photo-1577219491135-ce391730fb2c?auto=format&fit=crop&w=900&q=86",label:"Kitchen team"},
- {uri:"https://images.unsplash.com/photo-1516211697506-8360dbcfe9a4?auto=format&fit=crop&w=900&q=86",label:"Service management"},
- {uri:"https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=86",label:"Restaurant floor"},
- {uri:"https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&w=900&q=86",label:"Guest service"},
- {uri:"https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=900&q=86",label:"Fast operations"}
-];
-export function HomeScreen({commands,onOpenActivity,onOpenVoice}:Props){const insets=useSafeAreaInsets(),{width}=useWindowDimensions(),pending=commands.filter(x=>x.status==="pending").length,wide=width>720;return <ScrollView style={s.page} showsVerticalScrollIndicator={false} contentContainerStyle={[s.content,{paddingTop:insets.top+10,maxWidth:wide?860:560,alignSelf:"center",width:"100%"}]}>
-<View style={s.greeting}><View><Text style={s.hello}>Good morning, team</Text><Text style={s.sub}>Tauranto is listening and ready.</Text></View><Pressable onPress={onOpenActivity} style={s.bell}><Ionicons name="notifications-outline" size={20} color={C.ink}/>{pending>0&&<View style={s.badge}><Text style={s.badgeText}>{pending}</Text></View>}</Pressable></View>
-<ImageBackground source={{uri:hero}} style={s.hero} imageStyle={s.heroImage}><View style={s.heroShade}/><View style={s.heroContent}><Text style={s.heroKicker}>TAURANTO · HANDS-FREE OPERATIONS</Text><Text style={s.heroTitle}>Your restaurant,{"\n"}always within earshot.</Text><Text style={s.heroCopy}>Speak naturally. Tauranto captures the request and keeps the shift moving.</Text><Pressable onPress={onOpenActivity} style={s.heroButton}><Text style={s.heroButtonText}>View activity</Text><Ionicons name="arrow-forward" size={18} color="#fff"/></Pressable></View></ImageBackground>
-<Pressable onPress={onOpenVoice} style={s.voiceCard}><View style={s.mic}><Ionicons name="mic" size={25} color="#fff"/></View><View style={{flex:1}}><Text style={s.kicker}>VOICE OPERATIONS</Text><Text style={s.voiceTitle}>Hey Tauranto</Text><Text style={s.voiceSub}>Tell Tauranto what needs to happen next.</Text><View style={s.voicePills}><Pill icon="mic-outline" text="Speak"/><Pill icon="keypad-outline" text="Type"/><Pill icon="time-outline" text="Recent"/></View></View></Pressable>
-<View style={s.story}><Text style={s.storyTitle}>Your Restaurant. Smarter.</Text><Text style={[s.storyTitle,{color:C.green}]}>Operations, Simplified.</Text><Text style={s.storyCopy}>See how Tauranto supports the people, decisions and movement behind a great shift.</Text><PhotoFan/></View>
-</ScrollView>}
-function Pill({icon,text}:{icon:keyof typeof Ionicons.glyphMap;text:string}){return <View style={s.pill}><Ionicons name={icon} size={14} color={C.green}/><Text style={s.pillText}>{text}</Text></View>}
-function PhotoFan(){const [fanned,setFanned]=useState(false),[viewer,setViewer]=useState(false),[index,setIndex]=useState(0);const closed=[-8,-5,-2,2,5,8],open=[-24,-15,-7,7,15,24];return <><View style={s.fanZone}><View style={s.fanCanvas}>{photos.map((p,i)=>{const spread=fanned?(i-2.5)*28:(i-2.5)*4;const lift=fanned?Math.abs(i-2.5)*5:Math.abs(i-2.5);return <Pressable key={p.uri} onPress={()=>{if(!fanned){setFanned(true);return}setIndex(i);setViewer(true)}} style={[s.fanPhoto,{zIndex:i,transform:[{translateX:spread},{translateY:lift},{rotate:`${(fanned?open:closed)[i]}deg`}]}]}><Image source={{uri:p.uri}} style={s.photo}/></Pressable>})}</View><Pressable onPress={()=>setFanned(v=>!v)} style={s.fanButton}><Ionicons name={fanned?"contract-outline":"albums-outline"} size={15} color="#fff"/><Text style={s.fanButtonText}>{fanned?"Stack photos":"Open photo fan"}</Text></Pressable>{fanned&&<Text style={s.fanHelp}>Tap any photo to view • swipe in viewer</Text>}</View><Modal visible={viewer} transparent animationType="fade" onRequestClose={()=>setViewer(false)}><View style={s.modal}><Pressable style={s.close} onPress={()=>setViewer(false)}><Ionicons name="close" size={24} color="#fff"/></Pressable><Text style={s.modalKicker}>TAURANTO IN ACTION</Text><Text style={s.modalTitle}>{photos[index].label}</Text><ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onMomentumScrollEnd={e=>setIndex(Math.round(e.nativeEvent.contentOffset.x/e.nativeEvent.layoutMeasurement.width))} style={s.gallery} contentContainerStyle={s.galleryContent}>{photos.map((p,i)=><View key={p.uri} style={s.slide}><Image source={{uri:p.uri}} style={s.slideImage}/><View style={s.slideLabel}><Text style={s.slideNum}>{String(i+1).padStart(2,"0")}</Text><Text style={s.slideText}>{p.label}</Text></View></View>)}</ScrollView><Text style={s.swipe}>Swipe left or right to explore</Text></View></Modal></>}
-const s=StyleSheet.create({page:{flex:1,backgroundColor:C.paper},content:{paddingHorizontal:13,paddingBottom:112},greeting:{minHeight:60,paddingHorizontal:4,paddingVertical:7,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},hello:{fontFamily:"NunitoSans_900Black",fontSize:18,color:C.ink,letterSpacing:-.5},sub:{fontFamily:"NunitoSans_600SemiBold",fontSize:9.5,color:C.muted,marginTop:2},bell:{width:38,height:38,borderRadius:13,backgroundColor:C.card,alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:C.line},badge:{position:"absolute",right:-3,top:-5,minWidth:18,height:18,borderRadius:9,backgroundColor:C.orange,alignItems:"center",justifyContent:"center",paddingHorizontal:4},badgeText:{fontFamily:"NunitoSans_900Black",fontSize:9,color:"#fff"},hero:{height:238,marginTop:4,borderRadius:26,overflow:"hidden",justifyContent:"flex-end"},heroImage:{borderRadius:26},heroShade:{...StyleSheet.absoluteFillObject,backgroundColor:"rgba(13,23,19,.52)"},heroContent:{padding:20,paddingBottom:19},heroKicker:{fontFamily:"NunitoSans_900Black",fontSize:7.5,letterSpacing:1.55,color:"#F3D4BF",marginBottom:8},heroTitle:{fontFamily:"NunitoSans_900Black",fontSize:29,lineHeight:31,color:"#fff",letterSpacing:-1.1},heroCopy:{fontFamily:"NunitoSans_600SemiBold",fontSize:11.5,lineHeight:16,color:"rgba(255,255,255,.88)",maxWidth:360,marginTop:10},heroButton:{marginTop:16,height:38,alignSelf:"flex-start",borderRadius:19,borderWidth:1,borderColor:"rgba(255,255,255,.6)",paddingHorizontal:15,flexDirection:"row",alignItems:"center",gap:10,backgroundColor:"rgba(0,0,0,.14)"},heroButtonText:{fontFamily:"NunitoSans_900Black",fontSize:9.5,color:"#fff"},voiceCard:{minHeight:135,borderRadius:23,backgroundColor:C.card,borderWidth:1,borderColor:C.line,marginTop:11,padding:15,flexDirection:"row",alignItems:"center",gap:14},mic:{width:62,height:62,borderRadius:31,backgroundColor:C.green,alignItems:"center",justifyContent:"center",borderWidth:5,borderColor:"#E5ECE2"},kicker:{fontFamily:"NunitoSans_900Black",fontSize:7.5,letterSpacing:1.5,color:C.orange},voiceTitle:{fontFamily:"NunitoSans_900Black",fontSize:22,color:C.green,letterSpacing:-.7,marginTop:3},voiceSub:{fontFamily:"NunitoSans_600SemiBold",fontSize:10,color:C.muted,marginTop:1},voicePills:{flexDirection:"row",gap:5,marginTop:9},pill:{height:27,borderRadius:14,borderWidth:1,borderColor:C.line,backgroundColor:"#FAF8F3",paddingHorizontal:8,flexDirection:"row",alignItems:"center",gap:4},pillText:{fontFamily:"NunitoSans_800ExtraBold",fontSize:8,color:C.ink},story:{marginTop:11,borderRadius:23,backgroundColor:C.card,borderWidth:1,borderColor:C.line,paddingTop:16,paddingHorizontal:16,paddingBottom:10,overflow:"hidden"},storyTitle:{fontFamily:"NunitoSans_900Black",fontSize:21,lineHeight:24,color:C.ink,letterSpacing:-.75},storyCopy:{fontFamily:"NunitoSans_600SemiBold",fontSize:10,lineHeight:14.5,color:C.muted,maxWidth:330,marginTop:7},fanZone:{height:178,marginTop:3,alignItems:"center",justifyContent:"flex-end"},fanCanvas:{position:"absolute",left:0,right:0,top:2,height:132,alignItems:"center",justifyContent:"center"},fanPhoto:{position:"absolute",width:72,height:98,borderRadius:12,overflow:"hidden",borderWidth:3,borderColor:C.card,shadowColor:"#000",shadowOpacity:.13,shadowRadius:5,shadowOffset:{width:0,height:3},elevation:3},photo:{width:"100%",height:"100%",resizeMode:"cover"},fanButton:{height:34,borderRadius:17,backgroundColor:C.ink,paddingHorizontal:13,flexDirection:"row",alignItems:"center",gap:6,zIndex:20},fanButtonText:{fontFamily:"NunitoSans_900Black",fontSize:8.5,color:"#fff"},fanHelp:{fontFamily:"NunitoSans_700Bold",fontSize:7.5,color:C.muted,marginTop:5},modal:{flex:1,backgroundColor:"#211F1C",paddingTop:70,paddingBottom:42},close:{position:"absolute",right:22,top:50,width:44,height:44,borderRadius:22,backgroundColor:"rgba(255,255,255,.12)",alignItems:"center",justifyContent:"center",zIndex:5},modalKicker:{fontFamily:"NunitoSans_900Black",fontSize:9,letterSpacing:2,color:C.orange,marginHorizontal:24,marginTop:35},modalTitle:{fontFamily:"NunitoSans_900Black",fontSize:28,color:"#FFFDF9",marginHorizontal:24,marginTop:6,letterSpacing:-.8},gallery:{marginTop:22,flexGrow:0},galleryContent:{paddingHorizontal:20,gap:12},slide:{width:320,height:430,borderRadius:27,overflow:"hidden",backgroundColor:"#333",marginRight:4},slideImage:{width:"100%",height:"100%",resizeMode:"cover"},slideLabel:{position:"absolute",left:15,right:15,bottom:15,borderRadius:18,backgroundColor:"rgba(28,27,24,.78)",padding:14,flexDirection:"row",alignItems:"center",gap:10},slideNum:{fontFamily:"NunitoSans_900Black",fontSize:11,color:C.orange},slideText:{fontFamily:"NunitoSans_900Black",fontSize:15,color:"#fff"},swipe:{fontFamily:"NunitoSans_700Bold",fontSize:10,color:"#AAA59D",textAlign:"center",marginTop:17}});
+
+export function HomeScreen({commands,onOpenActivity,onOpenVoice}:Props){
+ const insets=useSafeAreaInsets();
+ const {width}=useWindowDimensions();
+ const pending=commands.filter(x=>x.status==="pending").length;
+ const wide=width>720;
+ return <ScrollView style={s.page} showsVerticalScrollIndicator={false} contentContainerStyle={[s.content,{paddingTop:insets.top+14,maxWidth:wide?900:620,alignSelf:"center",width:"100%"}]}>
+   <View style={s.greeting}>
+     <View style={{flex:1}}><Text style={s.hello}>Good morning, team</Text><Text style={s.sub}>Tauranto is listening and ready.</Text></View>
+     <Pressable onPress={onOpenActivity} style={s.bell}><Ionicons name="notifications-outline" size={24} color={C.ink}/>{pending>0&&<View style={s.badge}><Text style={s.badgeText}>{pending}</Text></View>}</Pressable>
+   </View>
+
+   <ImageBackground source={{uri:hero}} style={s.hero} imageStyle={s.heroImage}>
+     <View style={s.heroShade}/>
+     <View style={s.heroContent}>
+       <Text style={s.heroKicker}>TAURANTO · HANDS-FREE OPERATIONS</Text>
+       <Text style={s.heroTitle}>Your restaurant,{"\n"}always within earshot.</Text>
+       <Text style={s.heroCopy}>Speak naturally. Tauranto captures the request and keeps the shift moving.</Text>
+       <Pressable onPress={onOpenActivity} style={s.heroButton}><Text style={s.heroButtonText}>View activity</Text><Ionicons name="arrow-forward" size={21} color="#fff"/></Pressable>
+     </View>
+   </ImageBackground>
+
+   <Pressable onPress={onOpenVoice} style={s.voiceCard}>
+     <View style={s.voiceTop}>
+       <View style={s.mic}><Ionicons name="mic" size={30} color="#fff"/></View>
+       <View style={{flex:1}}><Text style={s.kicker}>VOICE OPERATIONS</Text><Text style={s.voiceTitle}>Hey Tauranto</Text></View>
+     </View>
+     <Text style={s.voiceSub}>Tell Tauranto what needs to happen next.</Text>
+     <View style={s.voicePills}><Pill icon="mic-outline" text="Speak"/><Pill icon="keypad-outline" text="Type"/><Pill icon="time-outline" text="Recent"/></View>
+   </Pressable>
+
+   <View style={s.sectionHead}><Text style={s.sectionTitle}>Shift overview</Text><Pressable onPress={onOpenActivity}><Text style={s.link}>View all</Text></Pressable></View>
+   <View style={s.statCard}>
+     <View><Text style={s.statLabel}>Needs your approval</Text><Text style={s.statValue}>{pending}</Text></View>
+     <View style={[s.statusPill,pending>0&&s.statusPillHot]}><Text style={[s.statusText,pending>0&&s.statusTextHot]}>{pending>0?"Action needed":"All clear"}</Text></View>
+   </View>
+   <View style={s.statCard}>
+     <View><Text style={s.statLabel}>Voice command</Text><Text style={s.statValueSmall}>Ready</Text></View>
+     <Pressable onPress={onOpenVoice} style={s.roundArrow}><Ionicons name="arrow-forward" size={21} color={C.green}/></Pressable>
+   </View>
+ </ScrollView>
+}
+
+function Pill({icon,text}:{icon:keyof typeof Ionicons.glyphMap;text:string}){return <View style={s.pill}><Ionicons name={icon} size={17} color={C.green}/><Text style={s.pillText}>{text}</Text></View>}
+
+const s=StyleSheet.create({
+ page:{flex:1,backgroundColor:C.paper},
+ content:{paddingHorizontal:20,paddingBottom:125},
+ greeting:{minHeight:88,paddingVertical:13,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+ hello:{fontFamily:"NunitoSans_900Black",fontSize:26,lineHeight:31,color:C.ink,letterSpacing:-1},
+ sub:{fontFamily:"NunitoSans_600SemiBold",fontSize:14,color:C.muted,marginTop:4},
+ bell:{width:52,height:52,borderRadius:15,backgroundColor:C.card,alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:C.line},
+ badge:{position:"absolute",right:-4,top:-7,minWidth:23,height:23,borderRadius:12,backgroundColor:C.orange,alignItems:"center",justifyContent:"center",paddingHorizontal:5},
+ badgeText:{fontFamily:"NunitoSans_900Black",fontSize:11,color:"#fff"},
+ hero:{height:300,marginTop:6,borderRadius:22,overflow:"hidden",justifyContent:"flex-end"},
+ heroImage:{borderRadius:22},
+ heroShade:{...StyleSheet.absoluteFillObject,backgroundColor:"rgba(10,18,15,.55)"},
+ heroContent:{padding:26,paddingBottom:25},
+ heroKicker:{fontFamily:"NunitoSans_900Black",fontSize:10,letterSpacing:1.8,color:"#F4CDB7",marginBottom:10},
+ heroTitle:{fontFamily:"NunitoSans_900Black",fontSize:38,lineHeight:40,color:"#fff",letterSpacing:-1.6},
+ heroCopy:{fontFamily:"NunitoSans_700Bold",fontSize:16,lineHeight:22,color:"rgba(255,255,255,.9)",maxWidth:470,marginTop:12},
+ heroButton:{marginTop:20,height:48,alignSelf:"flex-start",borderRadius:14,borderWidth:1,borderColor:"rgba(255,255,255,.7)",paddingHorizontal:18,flexDirection:"row",alignItems:"center",gap:12,backgroundColor:"rgba(0,0,0,.18)"},
+ heroButtonText:{fontFamily:"NunitoSans_900Black",fontSize:14,color:"#fff"},
+ voiceCard:{minHeight:190,borderRadius:18,backgroundColor:C.card,borderWidth:1,borderColor:C.line,marginTop:18,padding:22},
+ voiceTop:{flexDirection:"row",alignItems:"center",gap:16},
+ mic:{width:70,height:70,borderRadius:20,backgroundColor:C.green,alignItems:"center",justifyContent:"center"},
+ kicker:{fontFamily:"NunitoSans_900Black",fontSize:10,letterSpacing:1.8,color:C.orange},
+ voiceTitle:{fontFamily:"NunitoSans_900Black",fontSize:31,lineHeight:36,color:C.green,letterSpacing:-1.2,marginTop:3},
+ voiceSub:{fontFamily:"NunitoSans_700Bold",fontSize:15,lineHeight:20,color:C.muted,marginTop:15},
+ voicePills:{flexDirection:"row",gap:8,marginTop:15,flexWrap:"wrap"},
+ pill:{height:40,borderRadius:12,borderWidth:1,borderColor:C.line,backgroundColor:"#FAF8F3",paddingHorizontal:13,flexDirection:"row",alignItems:"center",gap:7},
+ pillText:{fontFamily:"NunitoSans_900Black",fontSize:12,color:C.ink},
+ sectionHead:{marginTop:30,marginBottom:13,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+ sectionTitle:{fontFamily:"NunitoSans_900Black",fontSize:30,lineHeight:35,color:C.ink,letterSpacing:-1.1},
+ link:{fontFamily:"NunitoSans_900Black",fontSize:13,color:C.green},
+ statCard:{minHeight:128,borderRadius:16,borderWidth:1,borderColor:C.line,backgroundColor:C.card,marginBottom:14,paddingHorizontal:22,paddingVertical:20,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+ statLabel:{fontFamily:"NunitoSans_700Bold",fontSize:16,color:C.ink},
+ statValue:{fontFamily:"NunitoSans_900Black",fontSize:42,lineHeight:48,color:C.ink,letterSpacing:-1.5,marginTop:5},
+ statValueSmall:{fontFamily:"NunitoSans_900Black",fontSize:31,lineHeight:38,color:C.ink,letterSpacing:-1,marginTop:5},
+ statusPill:{paddingHorizontal:15,height:38,borderRadius:19,backgroundColor:"#E7EFE5",alignItems:"center",justifyContent:"center"},
+ statusPillHot:{backgroundColor:"#F5D7C5"},
+ statusText:{fontFamily:"NunitoSans_900Black",fontSize:12,color:C.green},
+ statusTextHot:{color:"#9B4F2D"},
+ roundArrow:{width:48,height:48,borderRadius:24,backgroundColor:"#EAF0E7",alignItems:"center",justifyContent:"center"}
+});
