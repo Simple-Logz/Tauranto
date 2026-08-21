@@ -10,13 +10,13 @@ const nav:{id:string;name:TabName;label:string;icon:keyof typeof Ionicons.glyphM
  {id:"tables",name:"Tables",label:"Tables",icon:"reader-outline",color:"#776A91"},
  {id:"analytics",name:"Activity",label:"Analytics",icon:"stats-chart-outline",color:"#667DB1"},
  {id:"activity",name:"Activity",label:"Activity",icon:"time-outline",color:"#4E8DB3"},
- {id:"profile",name:"More",label:"Profile",icon:"person-outline",color:"#B26F7D"},
+ {id:"menu",name:"More",label:"Menu",icon:"menu-outline",color:"#B26F7D"},
 ];
 
 export function Shell({children,tab,onTabChange,pending,onVoice}:{children:React.ReactNode;tab:TabName;onTabChange:(t:TabName)=>void;pending:number;onVoice:()=>void}){
  const insets=useSafeAreaInsets(),tablet=false;
  useEffect(()=>{if(Platform.OS!=="web"||typeof document==="undefined")return;document.body.style.margin="0";document.body.style.overflow="hidden"},[]);
- const change=(next:TabName)=>next!==tab&&onTabChange(next);
+ const change=(next:TabName)=>(next==="More"||next!==tab)&&onTabChange(next);
  return <View style={s.shell}>
   {tablet&&<View style={[s.side,{paddingTop:insets.top+24}]}><View style={s.brand}><View style={s.logo}><Text style={s.logoText}>T</Text></View><View><Text style={s.brandText}>Tauranto</Text><Text style={s.brandSub}>RESTAURANT OPERATIONS</Text></View></View><View style={s.navGroup}>{nav.map(x=><Pressable key={x.id} onPress={()=>change(x.name)} style={[s.sideRow,tab===x.name&&s.sideActive]}><Ionicons name={x.icon} size={21} color={tab===x.name?x.color:colors.muted}/><Text style={[s.sideText,tab===x.name&&s.sideTextActive]}>{x.label}</Text>{x.id==="activity"&&pending>0&&<View style={s.count}><Text style={s.countText}>{pending}</Text></View>}</Pressable>)}</View></View>}
   <View style={s.content}>{children}</View>

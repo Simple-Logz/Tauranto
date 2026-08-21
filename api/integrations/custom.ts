@@ -14,9 +14,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const body = disconnectSchema.parse(req.body);
       const { data: member } = await db.from("restaurant_members").select("role").eq("restaurant_id", body.restaurantId).eq("user_id", user.id).in("role", ["owner", "admin"]).single();
       if (!member) throw new Error("FORBIDDEN");
-      const { error } = await db.from("integrations").update({ status: "disconnected" }).eq("id", body.integrationId).eq("restaurant_id", body.restaurantId);
+      const { data: integration, error: readError } = await db.from("integrations").select("id,provider,display_name").eq("id", body.integrationId).eq("restaurant_id", body.restaurantId).single();
+      if (readError || !integration) throw readError || new Error("INTEGRATION_NOT_FOUND");
+      const { error } = await db.from("integrations").update({ status: "disconnected", encrypted_credentials: null, config: { disconnected_at: new Date().toISOString() } }).eq("id", body.integrationId).eq("restaurant_id", body.restaurantId);
       if (error) throw error;
-      return res.json({ status: "disconnected" });
+      await db.from("audit_events").insert({ restaurant_id: body.restaurantId, actor_id: user.id, event: "integration_disconnected", metadata: { provider: integration.provider, integration_id: integration.id } });
+      return res.json({ status: "disconnected", integrationId: integration.id, provider: integration.provider });
     }
     const body = connectSchema.parse(req.body);
     const { data: member } = await db.from("restaurant_members").select("role").eq("restaurant_id", body.restaurantId).eq("user_id", user.id).in("role", ["owner", "admin"]).single();
