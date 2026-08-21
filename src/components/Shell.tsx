@@ -4,6 +4,7 @@ import{useSafeAreaInsets}from"react-native-safe-area-context";
 import{Ionicons}from"@expo/vector-icons";
 import{TabName}from"../../App";
 import{colors}from"../theme/tokens";
+import{useTheme}from"../theme/ThemeContext";
 
 const nav:{id:string;name:TabName;label:string;icon:keyof typeof Ionicons.glyphMap;color:string}[]=[
  {id:"home",name:"Today",label:"Home",icon:"home-outline",color:colors.leaf},
@@ -14,21 +15,21 @@ const nav:{id:string;name:TabName;label:string;icon:keyof typeof Ionicons.glyphM
 ];
 
 export function Shell({children,tab,onTabChange,pending,onVoice}:{children:React.ReactNode;tab:TabName;onTabChange:(t:TabName)=>void;pending:number;onVoice:()=>void}){
- const insets=useSafeAreaInsets(),tablet=false;
+ const insets=useSafeAreaInsets(),tablet=false,{dark}=useTheme();
  useEffect(()=>{if(Platform.OS!=="web"||typeof document==="undefined")return;document.body.style.margin="0";document.body.style.overflow="hidden"},[]);
  const change=(next:TabName)=>(next==="More"||next!==tab)&&onTabChange(next);
- return <View style={s.shell}>
+ return <View style={[s.shell,dark&&s.shellDark]}>
   {tablet&&<View style={[s.side,{paddingTop:insets.top+24}]}><View style={s.brand}><View style={s.logo}><Text style={s.logoText}>T</Text></View><View><Text style={s.brandText}>Tauranto</Text><Text style={s.brandSub}>RESTAURANT OPERATIONS</Text></View></View><View style={s.navGroup}>{nav.map(x=><Pressable key={x.id} onPress={()=>change(x.name)} style={[s.sideRow,tab===x.name&&s.sideActive]}><Ionicons name={x.icon} size={21} color={tab===x.name?x.color:colors.muted}/><Text style={[s.sideText,tab===x.name&&s.sideTextActive]}>{x.label}</Text>{x.id==="activity"&&pending>0&&<View style={s.count}><Text style={s.countText}>{pending}</Text></View>}</Pressable>)}</View></View>}
   <View style={s.content}>{children}</View>
-  {!tablet&&<View style={[s.bottomWrap,{paddingBottom:Math.max(insets.bottom,6)}]}><View style={s.bottom}>{nav.map(x=><Nav key={x.id} x={x} tab={tab} pending={pending} change={change}/>)}</View></View>}
+  {!tablet&&<View style={[s.bottomWrap,dark&&s.bottomWrapDark,{paddingBottom:Math.max(insets.bottom,6)}]}><View style={s.bottom}>{nav.map(x=><Nav key={x.id} x={x} tab={tab} pending={pending} change={change} dark={dark}/>)}</View></View>}
  </View>
 }
 
-function Nav({x,tab,pending,change}:any){const selected=tab===x.name;return <Pressable accessibilityLabel={x.label} onPress={()=>change(x.name)} style={({pressed})=>[s.navItem,selected&&s.navItemActive,pressed&&s.navItemPressed]}><View style={s.iconBox}><Ionicons name={x.icon} size={23} color={selected?"#E8753D":x.color}/>{x.id==="activity"&&pending>0&&<View style={s.badge}/>}</View><Text style={[s.navLabel,selected&&s.navLabelActive]}>{x.label}</Text></Pressable>}
+function Nav({x,tab,pending,change,dark}:any){const selected=tab===x.name;return <Pressable accessibilityLabel={x.label} onPress={()=>change(x.name)} style={({pressed})=>[s.navItem,selected&&s.navItemActive,pressed&&s.navItemPressed]}><View style={s.iconBox}><Ionicons name={x.icon} size={23} color={selected?"#E8753D":dark?"#7C9186":x.color}/>{x.id==="activity"&&pending>0&&<View style={s.badge}/>}</View><Text style={[s.navLabel,dark&&s.navLabelDark,selected&&s.navLabelActive]}>{x.label}</Text></Pressable>}
 
 const s=StyleSheet.create({
- shell:{flex:1,flexDirection:"row",backgroundColor:"#FFFFFF",overflow:"hidden"},content:{flex:1,overflow:"hidden"},
+ shell:{flex:1,flexDirection:"row",backgroundColor:"#FFFFFF",overflow:"hidden"},shellDark:{backgroundColor:"#101512"},content:{flex:1,overflow:"hidden"},
  side:{width:240,backgroundColor:"#FFFFFF",paddingHorizontal:18,borderRightWidth:1,borderRightColor:colors.line},brand:{flexDirection:"row",alignItems:"center",gap:11,marginBottom:42},logo:{width:43,height:43,borderRadius:15,backgroundColor:colors.leaf,alignItems:"center",justifyContent:"center"},logoText:{fontFamily:"NunitoSans_900Black",fontSize:20,color:"#fff"},brandText:{fontFamily:"NunitoSans_900Black",fontSize:20,color:colors.ink,letterSpacing:-.7},brandSub:{fontFamily:"NunitoSans_900Black",fontSize:7,color:colors.muted,letterSpacing:1.35},navGroup:{gap:7},sideRow:{height:52,borderRadius:17,flexDirection:"row",alignItems:"center",gap:12,paddingHorizontal:15},sideActive:{backgroundColor:colors.leafPale},sideText:{flex:1,fontFamily:"NunitoSans_800ExtraBold",fontSize:12,color:colors.muted},sideTextActive:{color:colors.ink},count:{minWidth:20,height:20,borderRadius:10,backgroundColor:"#FFF0D7",alignItems:"center",justifyContent:"center"},countText:{fontFamily:"NunitoSans_900Black",fontSize:9,color:"#A86500"},
- bottomWrap:{position:"absolute",left:8,right:8,bottom:5,backgroundColor:"rgba(255,255,255,.88)",paddingHorizontal:8,paddingTop:5,borderRadius:38,borderWidth:1.1,borderColor:"rgba(210,217,220,.92)",shadowColor:"#1B2520",shadowOpacity:.13,shadowRadius:21,shadowOffset:{width:0,height:9},elevation:16},bottom:{height:70,flexDirection:"row",alignItems:"center",justifyContent:"space-around"},navItem:{flex:1,height:61,borderRadius:20,alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:"transparent"},navItemActive:{backgroundColor:"rgba(232,117,61,.13)",borderColor:"rgba(232,117,61,.22)"},navItemPressed:{opacity:.72,transform:[{scale:.96}]},iconBox:{width:36,height:34,borderRadius:17,alignItems:"center",justifyContent:"center"},navLabel:{fontFamily:"NunitoSans_800ExtraBold",fontSize:8,lineHeight:10,color:"#687079",marginTop:1},navLabelActive:{color:"#C95E2C"},badge:{position:"absolute",right:1,top:1,width:6,height:6,borderRadius:3,backgroundColor:"#F07852",borderWidth:1.2,borderColor:"#fff"},
+ bottomWrap:{position:"absolute",left:8,right:8,bottom:5,backgroundColor:"rgba(255,255,255,.88)",paddingHorizontal:8,paddingTop:5,borderRadius:38,borderWidth:1.1,borderColor:"rgba(210,217,220,.92)",shadowColor:"#1B2520",shadowOpacity:.13,shadowRadius:21,shadowOffset:{width:0,height:9},elevation:16},bottomWrapDark:{backgroundColor:"rgba(23,29,25,.92)",borderColor:"rgba(57,68,62,.9)"},bottom:{height:70,flexDirection:"row",alignItems:"center",justifyContent:"space-around"},navItem:{flex:1,height:61,borderRadius:20,alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:"transparent"},navItemActive:{backgroundColor:"rgba(232,117,61,.13)",borderColor:"rgba(232,117,61,.22)"},navItemPressed:{opacity:.72,transform:[{scale:.96}]},iconBox:{width:36,height:34,borderRadius:17,alignItems:"center",justifyContent:"center"},navLabel:{fontFamily:"NunitoSans_800ExtraBold",fontSize:8,lineHeight:10,color:"#687079",marginTop:1},navLabelDark:{color:"#7C9186"},navLabelActive:{color:"#C95E2C"},badge:{position:"absolute",right:1,top:1,width:6,height:6,borderRadius:3,backgroundColor:"#F07852",borderWidth:1.2,borderColor:"#fff"},
 });
 

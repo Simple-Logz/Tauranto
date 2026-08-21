@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState}from"react";
-import{Alert,Image,Modal,NativeScrollEvent,NativeSyntheticEvent,Pressable,ScrollView,StyleSheet,Text,useWindowDimensions,View}from"react-native";
+import{Alert,Image,Modal,NativeScrollEvent,NativeSyntheticEvent,Pressable,ScrollView,StyleSheet,Switch,Text,useWindowDimensions,View}from"react-native";
 import{LinearGradient}from"expo-linear-gradient";
 import{Ionicons}from"@expo/vector-icons";
 import{useSafeAreaInsets}from"react-native-safe-area-context";
@@ -9,6 +9,7 @@ import{ProfileScreen}from"./ProfileScreen";
 import{TaurantoServiceFan}from"../components/TaurantoServiceFan";
 import type{WorkspacePage}from"./WorkspaceScreen";
 import{colors,type}from"../theme/tokens";
+import{useTheme}from"../theme/ThemeContext";
 
 type Props={restaurantId:string;commands:VoiceCommand[];onDecide:(id:string,approved:boolean)=>void;onOpenApprovals:()=>void;onOpenActivity:()=>void;onOpenVoice:()=>void;onOpenProfile:()=>void;onOpenIntegrations:()=>void;onOpenWorkspace:(page:WorkspacePage)=>void;onOpenBilling:()=>void;menuRequest?:number};
 const C={ink:"#0B0F0D",green:colors.leaf,deep:colors.leafInk,muted:"#687079",line:"#DFE4E6"};
@@ -22,13 +23,14 @@ const slides=[
 
 export function HomeScreen({restaurantId,commands,onOpenApprovals,onOpenActivity,onOpenVoice,onOpenProfile,onOpenIntegrations,onOpenWorkspace,onOpenBilling,menuRequest=0}:Props){
  const inset=useSafeAreaInsets(),{width}=useWindowDimensions(),rail=useRef<ScrollView>(null),cardWidth=Math.min(width-32,538);
- const[slide,setSlide]=useState(0),[workspace,setWorkspace]=useState<any>(null),[drawer,setDrawer]=useState(false),[profileOpen,setProfileOpen]=useState(false),[fullName,setFullName]=useState(""),[restaurantName,setRestaurantName]=useState(""),[dark,setDark]=useState(false),[changingTheme,setChangingTheme]=useState(false);
+ const[slide,setSlide]=useState(0),[workspace,setWorkspace]=useState<any>(null),[drawer,setDrawer]=useState(false),[profileOpen,setProfileOpen]=useState(false),[fullName,setFullName]=useState(""),[restaurantName,setRestaurantName]=useState(""),[changingTheme,setChangingTheme]=useState(false);
+ const{dark,setDark}=useTheme();
  const pending=commands.filter(x=>x.status==="pending").length,completed=commands.filter(x=>x.status==="completed"||x.status==="approved").length;
- useEffect(()=>{taurantoApi.workspace(restaurantId).then(x=>{setWorkspace(x);setFullName(x?.profile?.full_name||"");setRestaurantName(x?.restaurant?.name||"Your restaurant");setDark(x?.preferences?.appearance==="dark")}).catch(()=>{})},[restaurantId]);
+ useEffect(()=>{taurantoApi.workspace(restaurantId).then(x=>{setWorkspace(x);setFullName(x?.profile?.full_name||"");setRestaurantName(x?.restaurant?.name||"Your restaurant")}).catch(()=>{})},[restaurantId]);
  useEffect(()=>{if(menuRequest>0)setDrawer(true)},[menuRequest]);
  useEffect(()=>{const t=setInterval(()=>{const n=(slide+1)%slides.length;rail.current?.scrollTo({x:n*cardWidth,animated:true});setSlide(n)},5200);return()=>clearInterval(t)},[slide,cardWidth]);
  const first=String(fullName||workspace?.profile?.full_name||"").trim().split(/\s+/)[0]||"there",restaurant=restaurantName||workspace?.restaurant?.name||"Your restaurant",avatar=workspace?.profile?.avatar_url||workspace?.restaurant?.logo_url||"";
- const toggleAppearance=async()=>{if(changingTheme)return;const next=!dark,preferences={...(workspace?.preferences||{}),appearance:next?"dark":"light"};setDark(next);setChangingTheme(true);try{await taurantoApi.updateWorkspace(restaurantId,{profile:workspace?.profile||{},restaurant:workspace?.restaurant||{},preferences});setWorkspace((x:any)=>({...x,preferences}))}catch(e){setDark(!next);Alert.alert("Appearance not saved",e instanceof Error?e.message:"Please try again.")}finally{setChangingTheme(false)}};
+ const toggleAppearance=async(next:boolean)=>{if(changingTheme)return;const preferences={...(workspace?.preferences||{}),appearance:next?"dark":"light"};setDark(next);setChangingTheme(true);try{await taurantoApi.updateWorkspace(restaurantId,{profile:workspace?.profile||{},restaurant:workspace?.restaurant||{},preferences});setWorkspace((x:any)=>({...x,preferences}))}catch(e){setDark(!next);Alert.alert("Appearance not saved",e instanceof Error?e.message:"Please try again.")}finally{setChangingTheme(false)}};
  const recent=useMemo(()=>commands.slice(0,3),[commands]);
  const settle=(e:NativeSyntheticEvent<NativeScrollEvent>)=>setSlide(Math.round(e.nativeEvent.contentOffset.x/cardWidth));
  return <View style={[s.page,dark&&s.pageDark]}>
@@ -48,6 +50,7 @@ export function HomeScreen({restaurantId,commands,onOpenApprovals,onOpenActivity
     <Pressable onPress={()=>setDrawer(false)} style={[s.drawerClose,dark&&s.drawerCloseDark]}><Ionicons name="close" size={24} color={dark?"#F7FAF8":C.ink}/></Pressable>
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.drawerScroll}>
      <Pressable style={s.support} onPress={()=>{setDrawer(false);onOpenWorkspace("help")}}><Ionicons name="help-circle-outline" size={23} color={C.deep}/><View style={{flex:1}}><Text style={s.supportTitle}>Need help?</Text><Text style={s.supportCopy}>Talk to Tauranto support</Text></View><Ionicons name="chevron-forward" size={19} color={colors.leafDeep}/></Pressable>
+     <ThemeRow dark={dark} busy={changingTheme} onToggle={toggleAppearance}/>
      <DrawerRow dark={dark} icon="checkmark-circle-outline" label="Approvals" badge={pending} onPress={()=>{setDrawer(false);onOpenApprovals()}}/><DrawerRow dark={dark} icon="time-outline" label="Command history" onPress={()=>{setDrawer(false);onOpenActivity()}}/><DrawerRow dark={dark} icon="people-outline" label="Team & access" onPress={()=>{setDrawer(false);onOpenWorkspace("team")}}/><DrawerRow dark={dark} icon="git-network-outline" label="Integrations" onPress={()=>{setDrawer(false);onOpenIntegrations()}}/><DrawerRow dark={dark} icon="card-outline" label="Plans & billing" onPress={()=>{setDrawer(false);onOpenBilling()}}/><DrawerRow dark={dark} icon="options-outline" label="Settings" onPress={()=>{setDrawer(false);onOpenWorkspace("settings")}}/>
      <View style={[s.drawerFooter,dark&&s.drawerFooterDark]}><Pressable onPress={()=>supabase.auth.signOut()} style={s.logout}><Text style={s.logoutText}>Log out</Text></Pressable></View>
     </ScrollView>
@@ -60,6 +63,7 @@ export function HomeScreen({restaurantId,commands,onOpenApprovals,onOpenActivity
 }
 function Stat({icon,orange,value,label,action,onPress}:any){return <Pressable onPress={onPress} style={s.stat}><View style={[s.statIcon,orange?s.orange:s.green]}><Ionicons name={icon} size={27} color={orange?"#DF8115":colors.leafDeep}/></View><Text style={s.statValue}>{value}</Text><Text style={s.statLabel}>{label}</Text><View style={s.statAction}><Text style={s.statActionText}>{action}</Text><Ionicons name="chevron-forward" size={16} color="#303832"/></View></Pressable>}
 function DrawerRow({icon,label,badge,onPress,dark}:any){return <Pressable onPress={onPress} style={s.drawerRow}><Ionicons name={icon} size={25} color={dark?"#F4F8F5":"#151A17"}/><Text style={[s.drawerLabel,dark&&s.drawerLabelDark]}>{label}</Text>{badge?<View style={s.drawerBadge}><Text style={s.drawerBadgeText}>{badge}</Text></View>:null}<Ionicons name="chevron-forward" size={18} color={dark?"#8FA49A":"#9AA19D"}/></Pressable>}
+function ThemeRow({dark,busy,onToggle}:any){return <View style={s.drawerRow}><Ionicons name={dark?"moon":"sunny-outline"} size={25} color={dark?"#F4F8F5":"#151A17"}/><Text style={[s.drawerLabel,dark&&s.drawerLabelDark]}>Dark mode</Text><Switch disabled={busy} value={dark} onValueChange={onToggle} trackColor={{false:"#D5DBD7",true:colors.leafDeep}} thumbColor="#fff"/></View>}
 
 const s=StyleSheet.create({
  page:{flex:1,backgroundColor:"#fff",alignItems:"center"},pageDark:{backgroundColor:"#101512"},surfaceDark:{backgroundColor:"#171D19",borderBottomColor:"#2B342F"},scroll:{flex:1,width:"100%",maxWidth:570,backgroundColor:"#fff"},content:{backgroundColor:"#fff"},top:{zIndex:5,width:"100%",maxWidth:570,paddingHorizontal:13,paddingBottom:9,backgroundColor:"#fff",borderBottomWidth:1,borderBottomColor:C.line,flexDirection:"row",alignItems:"flex-end",justifyContent:"space-between"},topLeft:{flexDirection:"row",alignItems:"center",gap:9,flex:1},circle:{width:46,height:46,borderRadius:23,borderWidth:1,borderColor:"#DCE5E0",backgroundColor:"#fff",alignItems:"center",justifyContent:"center",overflow:"hidden"},circleDark:{backgroundColor:"#222A25",borderColor:"#39443E"},profileCircle:{shadowColor:colors.leafInk,shadowOpacity:.08,shadowRadius:8,shadowOffset:{width:0,height:3}},headerAvatar:{width:"100%",height:"100%"},circlePressed:{backgroundColor:colors.leafPale,transform:[{scale:.96}]},restaurant:{fontFamily:"NunitoSans_900Black",fontSize:15,lineHeight:19,color:C.deep,maxWidth:220},restaurantDark:{color:colors.leafDeep},
