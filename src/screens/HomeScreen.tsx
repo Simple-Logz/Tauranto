@@ -42,14 +42,14 @@ export function HomeScreen({restaurantId,commands,onOpenActivity,onOpenVoice,onO
    <View style={s.drawerStage}><Pressable style={s.drawerShade} onPress={()=>setDrawer(false)}/><View style={[s.drawer,dark&&s.drawerDark,{paddingTop:inset.top+18}]}>
     <Pressable onPress={()=>setDrawer(false)} style={[s.drawerClose,dark&&s.drawerCloseDark]}><Ionicons name="close" size={24} color={dark?"#F7FAF8":C.ink}/></Pressable>
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.drawerScroll}>
-     <Pressable style={s.support} onPress={()=>{setDrawer(false);setProfileOpen(true)}}><Ionicons name="help-circle-outline" size={23} color={C.deep}/><View style={{flex:1}}><Text style={s.supportTitle}>Need help?</Text><Text style={s.supportCopy}>Talk to Tauranto support</Text></View><Ionicons name="chevron-forward" size={19} color="#49B98A"/></Pressable>
+     <Pressable style={s.support} onPress={()=>{setDrawer(false);onOpenWorkspace("help")}}><Ionicons name="help-circle-outline" size={23} color={C.deep}/><View style={{flex:1}}><Text style={s.supportTitle}>Need help?</Text><Text style={s.supportCopy}>Talk to Tauranto support</Text></View><Ionicons name="chevron-forward" size={19} color="#49B98A"/></Pressable>
      <DrawerRow dark={dark} icon="checkmark-circle-outline" label="Approvals" badge={pending||3} onPress={()=>{setDrawer(false);onOpenActivity()}}/><DrawerRow dark={dark} icon="time-outline" label="Command history" onPress={()=>{setDrawer(false);onOpenActivity()}}/><DrawerRow dark={dark} icon="people-outline" label="Team & access" onPress={()=>{setDrawer(false);onOpenWorkspace("team")}}/><DrawerRow dark={dark} icon="git-network-outline" label="Integrations" onPress={()=>{setDrawer(false);onOpenIntegrations()}}/><DrawerRow dark={dark} icon="card-outline" label="Plans & billing" onPress={()=>{setDrawer(false);onOpenBilling()}}/><DrawerRow dark={dark} icon="options-outline" label="Settings" onPress={()=>{setDrawer(false);onOpenWorkspace("settings")}}/>
      <View style={[s.drawerFooter,dark&&s.drawerFooterDark]}><Pressable onPress={()=>supabase.auth.signOut()} style={s.logout}><Text style={s.logoutText}>Log out</Text></Pressable></View>
     </ScrollView>
    </View></View>
   </Modal>
   <Modal visible={profileOpen} transparent animationType="fade" onRequestClose={()=>setProfileOpen(false)}>
-   <Pressable style={s.profileShade} onPress={()=>setProfileOpen(false)}/><View style={s.profileSheet}><View style={s.profileTop}><View style={s.profileGrabber}/><Pressable accessibilityLabel="Close profile" onPress={()=>setProfileOpen(false)} style={s.profileClose}><Ionicons name="close" size={22} color={C.ink}/></Pressable></View><View style={{flex:1}}><ProfileScreen restaurantId={restaurantId} compact/></View></View>
+   <Pressable style={s.profileShade} onPress={()=>setProfileOpen(false)}/><View style={[s.profileSheet,{width:"78%",maxWidth:510}]}><View style={s.profileTop}><View style={s.profileGrabber}/><Pressable accessibilityLabel="Close profile" onPress={()=>setProfileOpen(false)} style={s.profileClose}><Ionicons name="close" size={22} color={C.ink}/></Pressable></View><View style={{flex:1}}><ProfileScreen restaurantId={restaurantId} compact/></View></View>
   </Modal>
  </View>
 }
