@@ -1,7 +1,7 @@
 import type {VercelRequest,VercelResponse} from "@vercel/node";
 import {z} from "zod";
 import {admin,fail,requireUser} from "../../server/http";
-const schema=z.object({restaurantId:z.string().uuid(),planId:z.enum(["basic","enterprise"])});
+const schema=z.object({restaurantId:z.string().uuid(),planId:z.enum(["free","basic","enterprise"])});
 export default async function handler(req:VercelRequest,res:VercelResponse){
  if(req.method!=="POST")return res.status(405).json({error:"METHOD_NOT_ALLOWED"});
  try{
