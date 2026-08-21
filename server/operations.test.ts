@@ -81,6 +81,24 @@ describe("buildImpactPlan", () => {
     expect(plan.some((p) => p.provider === "gmail")).toBe(true);
     expect(plan.some((p) => p.provider === "email")).toBe(false);
   });
+
+  it("never plans a square action, even when a square integration shows as connected", () => {
+    // Square OAuth connect works (see IntegrationsScreen), but execution is
+    // not built — buildImpactPlan must exclude it regardless of connection
+    // status so the app fails honestly (via validateProposal's "no
+    // configured delivery channel" message) instead of silently accepting a
+    // command it can't carry out.
+    const integrations = [{ provider: "square", status: "connected" }];
+    const menuPlan = buildImpactPlan(baseProposal(), integrations);
+    expect(menuPlan.some((p) => p.provider === "square")).toBe(false);
+    expect(menuPlan).toHaveLength(0);
+
+    const orderPlan = buildImpactPlan(
+      baseProposal({ action_type: "square_order", parameters: {} }),
+      integrations,
+    );
+    expect(orderPlan).toHaveLength(0);
+  });
 });
 
 describe("requiredApprovals", () => {

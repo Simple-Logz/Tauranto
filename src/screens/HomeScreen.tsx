@@ -19,11 +19,11 @@ export function HomeScreen({restaurantId,commands,onOpenApprovals,onOpenActivity
  const inset=useSafeAreaInsets(),{width}=useWindowDimensions(),rail=useRef<ScrollView>(null),cardWidth=Math.min(width-32,538);
  const[slide,setSlide]=useState(0),[workspace,setWorkspace]=useState<any>(null),[drawer,setDrawer]=useState(false),[profileOpen,setProfileOpen]=useState(false),[fullName,setFullName]=useState(""),[restaurantName,setRestaurantName]=useState(""),[dark,setDark]=useState(false),[changingTheme,setChangingTheme]=useState(false);
  const pending=commands.filter(x=>x.status==="pending").length,completed=commands.filter(x=>x.status==="completed"||x.status==="approved").length;
- useEffect(()=>{taurantoApi.workspace(restaurantId).then(x=>{setWorkspace(x);setFullName(x?.profile?.full_name||"John Offiong");setRestaurantName(x?.restaurant?.name||"Your restaurant");setDark(x?.preferences?.appearance==="dark")}).catch(()=>{})},[restaurantId]);
+ useEffect(()=>{taurantoApi.workspace(restaurantId).then(x=>{setWorkspace(x);setFullName(x?.profile?.full_name||"");setRestaurantName(x?.restaurant?.name||"Your restaurant");setDark(x?.preferences?.appearance==="dark")}).catch(()=>{})},[restaurantId]);
  useEffect(()=>{slides.forEach(x=>{void Image.prefetch(x.image)})},[]);
  useEffect(()=>{if(menuRequest>0)setDrawer(true)},[menuRequest]);
  useEffect(()=>{const t=setInterval(()=>{const n=(slide+1)%slides.length;rail.current?.scrollTo({x:n*cardWidth,animated:true});setSlide(n)},5200);return()=>clearInterval(t)},[slide,cardWidth]);
- const first=String(fullName||workspace?.profile?.full_name||"John Offiong").trim().split(/\s+/)[0]||"there",restaurant=restaurantName||workspace?.restaurant?.name||"Your restaurant",avatar=workspace?.profile?.avatar_url||workspace?.restaurant?.logo_url||"";
+ const first=String(fullName||workspace?.profile?.full_name||"").trim().split(/\s+/)[0]||"there",restaurant=restaurantName||workspace?.restaurant?.name||"Your restaurant",avatar=workspace?.profile?.avatar_url||workspace?.restaurant?.logo_url||"";
  const toggleAppearance=async()=>{if(changingTheme)return;const next=!dark,preferences={...(workspace?.preferences||{}),appearance:next?"dark":"light"};setDark(next);setChangingTheme(true);try{await taurantoApi.updateWorkspace(restaurantId,{profile:workspace?.profile||{},restaurant:workspace?.restaurant||{},preferences});setWorkspace((x:any)=>({...x,preferences}))}catch(e){setDark(!next);Alert.alert("Appearance not saved",e instanceof Error?e.message:"Please try again.")}finally{setChangingTheme(false)}};
  const recent=useMemo(()=>commands.slice(0,3),[commands]);
  const settle=(e:NativeSyntheticEvent<NativeScrollEvent>)=>setSlide(Math.round(e.nativeEvent.contentOffset.x/cardWidth));

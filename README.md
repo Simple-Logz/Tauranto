@@ -28,6 +28,7 @@ Tauranto is a mobile-first restaurant operations assistant. It captures a spoken
 - OpenAI Platform API key
 - Vercel
 - Resend for approval emails
+- Stripe for Basic/Enterprise billing
 - Optional Twilio for SMS; do not enable until sender compliance and consent are configured
 
 ## 1. Supabase
@@ -52,6 +53,8 @@ Copy `.env.example` to `.env.local`. In Vercel, add the same values under Projec
 `CREDENTIALS_ENCRYPTION_KEY` and `OAUTH_STATE_SECRET` are required and must each be their own random value (`openssl rand -base64 32`) — do not reuse the Supabase service-role key for these. They are used to encrypt stored OAuth credentials and to sign OAuth state respectively; the app throws on startup use of either feature if they are unset.
 
 `SENTRY_DSN` is optional — leave it blank to run without error monitoring. Set it to a project DSN from sentry.io to have unexpected server errors reported there instead of only sitting in Vercel's function logs.
+
+`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are required for Basic ($30/month) and Enterprise ($65/month) checkout to work; the Free plan needs neither. Create a webhook endpoint in the Stripe Dashboard pointing at `<APP_URL>/api/billing/webhook`, subscribed to `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`, then copy its signing secret into `STRIPE_WEBHOOK_SECRET`. Run `supabase/migrations/017_pricing_update.sql` (in order with the rest) to set the corrected prices.
 
 Never paste keys into chat, commit `.env.local`, embed private keys in Expo, or expose the Supabase service-role key.
 
@@ -99,6 +102,8 @@ Sign in through Supabase and send its access token as `Authorization: Bearer <to
 - `POST /api/approvals/decision` — authenticated manager decision
 - `POST /api/realtime/session` — ephemeral Realtime client secret
 - `GET /api/jobs/run` — cron-protected execution worker
+- `POST /api/billing/checkout` — creates a Stripe Checkout session for Basic/Enterprise
+- `POST /api/billing/webhook` — Stripe webhook; activates/updates/cancels a subscription
 
 Supplier email executes through Resend. All other approved actions use a configured `custom_webhook` integration. OAuth connectors for Toast, Square, Google Calendar, Microsoft, HubSpot, Shopify, and WordPress require each provider’s credentials and cannot be made live with code alone.
 
