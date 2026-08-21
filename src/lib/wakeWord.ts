@@ -1,10 +1,6 @@
 import{useEffect,useRef,useState}from"react";
 import{ExpoSpeechRecognitionModule,useSpeechRecognitionEvent}from"expo-speech-recognition";
-
-// Tolerate common mis-hears of "Tauranto" from on-device speech recognizers
-// (which have never seen the brand name) — "hey tauranto" is the target
-// phrase, the rest are safety nets so standby doesn't stay silent forever.
-const PHRASES=["hey tauranto","tauranto","hey toronto","hey tarantino","hey toranto","hey turanto","hey tauranno","hey tirano"];
+import{findWake}from"./wakeMatch";
 
 // How long to keep listening after the wake phrase, waiting for the
 // instruction that follows it, before giving up and reporting nothing heard.
@@ -23,13 +19,6 @@ const MAX_CAPTURE_MS=14000;
 const RESTART_DURING_CAPTURE_MS=60;
 const RESTART_DURING_WAKE_MS=350;
 
-function findWake(transcript:string):{end:number}|null{
- const t=transcript.toLowerCase();
- let best:number|null=null;
- for(const p of PHRASES){const i=t.indexOf(p);if(i>=0&&(best===null||i<best)){best=i+p.length}}
- return best===null?null:{end:best};
-}
-
 /**
  * Always-on wake-word listener for "Hey Tauranto".
  *
@@ -37,10 +26,13 @@ function findWake(transcript:string):{end:number}|null{
  * (on-device where the platform supports it), already an installed
  * dependency and already declared in app.json's permission strings. It is
  * not a dedicated low-power wake chip, and it is not a purpose-built
- * wake-word engine (something like Picovoice would give materially better
- * "did it even hear me" reliability, at the cost of a new vendor account
- * and a trained wake-word model — worth doing if accuracy is still not
- * good enough after this).
+ * wake-word engine — deliberately: Picovoice Porcupine (the usual
+ * off-the-shelf option) discontinued its free tier entirely in mid-2026, so
+ * this app depends on no vendor account, no per-device key, and nothing
+ * that can be taken away by a pricing change. Reliability instead comes from
+ * findWake()'s two-stage matching below: a fast list of mis-hears we've
+ * already confirmed happen, then a fuzzy edit-distance fallback so a
+ * mis-hearing nobody has reported yet still wakes the app.
  *
  * What this version fixes: mobile recognizers end a "continuous" session
  * after a couple of seconds of silence even mid-sentence — that is normal
