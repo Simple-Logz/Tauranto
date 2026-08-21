@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.cream }, keyboard: { flex: 1 },
   scroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, paddingVertical: 28 },
   phoneFrame: { width: "100%", maxWidth: 460 },
-  brandRow: { flexDirection: "row", alignItems: "center" }, mark: { width: 48, height: 48, borderRadius: 15, backgroundColor: "#315B3D", alignItems: "center", justifyContent: "center", marginRight: 12 },
+  brandRow: { flexDirection: "row", alignItems: "center" }, mark: { width: 48, height: 48, borderRadius: 15, backgroundColor: colors.leafInk, alignItems: "center", justifyContent: "center", marginRight: 12 },
   markText: { fontFamily: "NunitoSans_900Black", fontSize: 23, color: "white" }, brand: { fontFamily: "NunitoSans_900Black", fontSize: 15, letterSpacing: 1.8, color: colors.ink },
   intro: { paddingTop: 34, paddingBottom: 26 },
   title: { fontFamily: "NunitoSans_900Black", fontSize: 34, lineHeight: 40, letterSpacing: -0.8, color: colors.ink },
@@ -147,6 +147,6 @@ const styles = StyleSheet.create({
   notice: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 12, padding: 11, marginBottom: 13 }, noticeError: { backgroundColor: colors.tomatoPale, borderWidth: 1, borderColor: "#F0C8BB" }, noticeSuccess: { backgroundColor: colors.leafPale, borderWidth: 1, borderColor: "#D6E2C8" },
   noticeText: { flex: 1, fontFamily: "NunitoSans_700Bold", fontSize: 9, lineHeight: 14, color: colors.leafDeep }, noticeErrorText: { color: "#8D3724" },
   label: { fontFamily: "NunitoSans_900Black", fontSize: 12, color: colors.inkSoft, marginBottom: 8, marginLeft: 2 }, field: { height: 58, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: "#FBFCF9", paddingHorizontal: 15, marginBottom: 17 },
-  input: { flex: 1, height: "100%", fontFamily: "NunitoSans_700Bold", fontSize: 15, color: colors.ink }, primary: { height: 58, borderRadius: 16, backgroundColor: "#315B3D", flexDirection: "row", gap: 9, alignItems: "center", justifyContent: "center", marginTop: 3 }, primaryText: { fontFamily: "NunitoSans_900Black", color: "white", fontSize: 15 },
-  pressed: { opacity: 0.88 }, disabled: { opacity: 0.62 }, switchRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 20 }, switchCopy: { fontFamily: "NunitoSans_600SemiBold", fontSize: 13, color: colors.muted }, switchAction: { fontFamily: "NunitoSans_900Black", fontSize: 13, color: "#315B3D" },
+  input: { flex: 1, height: "100%", fontFamily: "NunitoSans_700Bold", fontSize: 15, color: colors.ink }, primary: { height: 58, borderRadius: 16, backgroundColor: colors.leafInk, flexDirection: "row", gap: 9, alignItems: "center", justifyContent: "center", marginTop: 3 }, primaryText: { fontFamily: "NunitoSans_900Black", color: "white", fontSize: 15 },
+  pressed: { opacity: 0.88 }, disabled: { opacity: 0.62 }, switchRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 20 }, switchCopy: { fontFamily: "NunitoSans_600SemiBold", fontSize: 13, color: colors.muted }, switchAction: { fontFamily: "NunitoSans_900Black", fontSize: 13, color: colors.leafInk },
 });

@@ -5,8 +5,15 @@ export const colors = {
   leaf: "#00D084",
   leafDeep: "#00A96F",
   leafDark: "#08785A",
+  // Deep green for headings, prices, and text/icons that need to read on a
+  // white card — consolidates ~15 near-identical dark greens that had drifted
+  // across screens (#174D2E, #287345, #176B4D, #34734B, #315B3D, and more).
+  leafInk: "#174D2E",
   leafPale: "#E8FFF5",
   leafMist: "#F3FFF9",
+  // Saturated pale green for chip/badge/highlight backgrounds — consolidates
+  // #DFF7B4, #C9EEDD, #BFEAD5, #BFECD7, #CDE2D1 and similar one-off tints.
+  leafTint: "#DFF7B4",
   tomato: "#F06B45",
   tomatoDeep: "#D95634",
   tomatoPale: "#FFF0E9",
