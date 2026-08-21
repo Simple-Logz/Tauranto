@@ -1,8 +1,82 @@
-import React,{useEffect,useRef,useState}from'react';import{Pressable,StyleSheet,Switch,Text,TextInput,View}from'react-native';import*as Speech from'expo-speech';import{Ionicons}from'@expo/vector-icons';import{colors,radius,shadow}from'../theme/tokens';import{VoiceCommand}from'../lib/models';import{useTaurantoRecorder}from'../lib/voiceRecorder';
-type Mode='off'|'standby'|'recording'|'transcribing'|'working'|'error';export type VoiceStatus={mode:Mode;message:string;lastHeard:string};const draft=(transcript:string):VoiceCommand=>({id:`capture-${Date.now()}`,transcript,title:'Restaurant instruction',summary:transcript,type:'task',status:'pending',createdAt:new Date().toISOString(),targets:[],confidence:1});
-export function VoiceComposer({onCommand,enabled,onEnabledChange,onStatusChange,visible=true}:{onCommand:(command:VoiceCommand)=>void|string|Promise<void|string>;enabled:boolean;onEnabledChange:(enabled:boolean)=>void;onStatusChange?:(status:VoiceStatus)=>void;visible?:boolean}){const[mode,setMode]=useState<Mode>('off'),[message,setMessage]=useState('Voice is ready.'),[transcript,setTranscript]=useState(''),[lastHeard,setLastHeard]=useState(''),[manual,setManual]=useState(false);const submitting=useRef(false),recordingActive=useRef(false),recordingTimer=useRef<ReturnType<typeof setTimeout>|null>(null);const{start,stopAndTranscribe,cancel}=useTaurantoRecorder();const setM=(m:Mode,msg:string)=>{setMode(m);setMessage(msg)};useEffect(()=>{onStatusChange?.({mode,message,lastHeard})},[mode,message,lastHeard,onStatusChange]);useEffect(()=>{setM(enabled?'standby':'off',enabled?'Voice standby is on. Use Speak now for full-command capture while wake-word service is being initialized.':'Voice is off.')},[enabled]);useEffect(()=>()=>{Speech.stop();if(recordingTimer.current)clearTimeout(recordingTimer.current);if(recordingActive.current){recordingActive.current=false;void cancel()}},[]);
-async function beginRecording(){if(submitting.current||recordingActive.current)return;try{Speech.stop();setTranscript('');setLastHeard('');setM('recording','Recording for five seconds. Speak naturally.');await start();recordingActive.current=true;recordingTimer.current=setTimeout(()=>void finishRecording(),5000)}catch(e){recordingActive.current=false;setM('error',e instanceof Error?e.message:'Could not start the microphone.')}}
-async function finishRecording(){if(submitting.current||!recordingActive.current)return;recordingActive.current=false;if(recordingTimer.current){clearTimeout(recordingTimer.current);recordingTimer.current=null}try{setM('transcribing','Five seconds captured. Tauranto is transcribing exactly what you said…');const text=(await stopAndTranscribe()).trim();if(!text)throw new Error('No speech was detected.');setTranscript(text);setLastHeard(text);await submit(text)}catch(e){setM('error',`Voice capture failed: ${e instanceof Error?e.message:'Could not transcribe the recording.'}`)}}
-async function submit(v=transcript){const text=v.trim();if(!text||submitting.current)return;submitting.current=true;setLastHeard(text);setM('working','Transcript received. Tauranto is interpreting and routing the command…');try{const reply=await onCommand(draft(text));const spoken=typeof reply==='string'&&reply.trim()?reply.trim():'Done.';setM('working',spoken);Speech.stop();Speech.speak(spoken,{rate:.96,onDone:()=>{submitting.current=false;setM(enabled?'standby':'off',enabled?'Ready for the next command.':'Voice is off.')},onStopped:()=>{submitting.current=false;setM(enabled?'standby':'off','Ready for the next command.')}})}catch(e){submitting.current=false;const d=e instanceof Error?e.message:'Could not process that instruction.';setM('error',`Command failed: ${d}`);Speech.speak(`I couldn't complete that instruction. ${d}`,{rate:.96})}}
-if(!visible)return null;const active=mode==='recording',working=mode==='working'||mode==='transcribing',bad=mode==='error';return <View><View style={s.card}><View style={s.top}><View style={[s.dot,mode==='standby'&&s.ready,active&&s.live,bad&&s.bad]}/><View style={{flex:1}}><Text style={s.status}>{mode==='off'?'Voice off':mode==='standby'?'Voice standby':active?'Recording':mode==='transcribing'?'Transcribing':mode==='working'?'Tauranto is working':'Voice needs attention'}</Text><Text style={s.statusCopy}>{message}</Text></View><Switch value={enabled} onValueChange={onEnabledChange}/></View>{!!lastHeard&&<View style={s.transcript}><Text style={s.label}>TAURANTO HEARD</Text><Text style={s.transcriptText}>“{lastHeard}”</Text></View>}<Pressable disabled={working} onPress={()=>void(active?finishRecording():beginRecording())} style={[s.speak,active&&s.stop,working&&{opacity:.6}]}><Ionicons name={active?'stop':'mic'} size={27} color='white'/><View style={{flex:1}}><Text style={s.speakTitle}>{active?'Recording…':'Speak now'}</Text><Text style={s.speakCopy}>{active?'Stops automatically after five seconds':'Tauranto records for five seconds, then executes.'}</Text></View></Pressable><Pressable onPress={()=>setManual(x=>!x)} style={s.type}><Ionicons name='keypad-outline' size={22} color={colors.ink}/><Text style={s.typeText}>{manual?'Close typing':'Type instead'}</Text></Pressable></View>{manual&&<View style={s.inputBar}><TextInput value={transcript} onChangeText={setTranscript} multiline placeholder='Type a restaurant instruction' style={s.input}/><Pressable onPress={()=>void submit()} style={s.send}><Ionicons name='arrow-up' size={22} color='white'/></Pressable></View>}</View>}
-const s=StyleSheet.create({card:{backgroundColor:'#F5FFFA',borderRadius:26,padding:20,borderWidth:1,borderColor:'#CDEFE0',...shadow},top:{flexDirection:'row',alignItems:'center',gap:12},dot:{width:13,height:13,borderRadius:7,backgroundColor:colors.muted},ready:{backgroundColor:colors.leaf},live:{backgroundColor:colors.tomato},bad:{backgroundColor:'#B42318'},status:{fontFamily:'NunitoSans_900Black',fontSize:18,color:colors.ink},statusCopy:{fontFamily:'NunitoSans_600SemiBold',fontSize:13,lineHeight:19,color:colors.inkSoft,marginTop:3},transcript:{backgroundColor:'#FFFFFF',borderRadius:radius.md,padding:15,marginTop:15},label:{fontFamily:'NunitoSans_900Black',fontSize:11,letterSpacing:1,color:colors.leafDeep},transcriptText:{fontFamily:'NunitoSans_800ExtraBold',fontSize:17,lineHeight:24,color:colors.ink,marginTop:7},speak:{minHeight:72,borderRadius:18,backgroundColor:colors.leaf,flexDirection:'row',alignItems:'center',gap:13,paddingHorizontal:16,marginTop:17},stop:{backgroundColor:colors.tomato},speakTitle:{fontFamily:'NunitoSans_900Black',fontSize:16,color:'white'},speakCopy:{fontFamily:'NunitoSans_600SemiBold',fontSize:12.5,color:'#FFFFFFE5',marginTop:3},type:{height:54,borderRadius:16,backgroundColor:colors.paper,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:9,borderWidth:1,borderColor:colors.line,marginTop:10},typeText:{fontFamily:'NunitoSans_900Black',fontSize:15,color:colors.ink},inputBar:{flexDirection:'row',alignItems:'flex-end',backgroundColor:colors.paper,borderRadius:radius.md,borderWidth:1,borderColor:colors.line,marginTop:10,padding:9,gap:8},input:{flex:1,minHeight:50,maxHeight:110,fontFamily:'NunitoSans_600SemiBold',fontSize:16,color:colors.ink,padding:10},send:{width:50,height:50,borderRadius:15,backgroundColor:colors.leaf,alignItems:'center',justifyContent:'center'}});
+import React, { useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import * as Speech from 'expo-speech';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, radius, shadow } from '../theme/tokens';
+import { VoiceCommand } from '../lib/models';
+import { useTaurantoRecorder } from '../lib/voiceRecorder';
+type Mode = 'off' | 'standby' | 'recording' | 'transcribing' | 'working' | 'error';
+export type VoiceStatus = {
+    mode: Mode;
+    message: string;
+    lastHeard: string;
+};
+const draft = (transcript: string): VoiceCommand => ({ id: `capture-${Date.now()}`, transcript, title: 'Restaurant instruction', summary: transcript, type: 'task', status: 'pending', createdAt: new Date().toISOString(), targets: [], confidence: 1 });
+export function VoiceComposer({ onCommand, enabled, onEnabledChange, onStatusChange, visible = true }: {
+    onCommand: (command: VoiceCommand) => void | string | Promise<void | string>;
+    enabled: boolean;
+    onEnabledChange: (enabled: boolean) => void;
+    onStatusChange?: (status: VoiceStatus) => void;
+    visible?: boolean;
+}) {
+    const [mode, setMode] = useState<Mode>('off'), [message, setMessage] = useState('Voice is ready.'), [transcript, setTranscript] = useState(''), [lastHeard, setLastHeard] = useState(''), [manual, setManual] = useState(false);
+    const submitting = useRef(false), recordingActive = useRef(false), recordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const { start, stopAndTranscribe, cancel } = useTaurantoRecorder();
+    const setM = (m: Mode, msg: string) => { setMode(m); setMessage(msg); };
+    useEffect(() => { onStatusChange?.({ mode, message, lastHeard }); }, [mode, message, lastHeard, onStatusChange]);
+    useEffect(() => { setM(enabled ? 'standby' : 'off', enabled ? 'Voice capture is ready. Tap Speak now for a five-second command.' : 'Voice capture is off.'); }, [enabled]);
+    useEffect(() => () => { Speech.stop(); if (recordingTimer.current)
+        clearTimeout(recordingTimer.current); if (recordingActive.current) {
+        recordingActive.current = false;
+        void cancel();
+    } }, []);
+    async function beginRecording() { if (submitting.current || recordingActive.current)
+        return; try {
+        Speech.stop();
+        setTranscript('');
+        setLastHeard('');
+        setM('recording', 'Recording for five seconds. Speak naturally.');
+        await start();
+        recordingActive.current = true;
+        recordingTimer.current = setTimeout(() => void finishRecording(), 5000);
+    }
+    catch (e) {
+        recordingActive.current = false;
+        setM('error', e instanceof Error ? e.message : 'Could not start the microphone.');
+    } }
+    async function finishRecording() { if (submitting.current || !recordingActive.current)
+        return; recordingActive.current = false; if (recordingTimer.current) {
+        clearTimeout(recordingTimer.current);
+        recordingTimer.current = null;
+    } try {
+        setM('transcribing', 'Five seconds captured. Tauranto is transcribing exactly what you said…');
+        const text = (await stopAndTranscribe()).trim();
+        if (!text)
+            throw new Error('No speech was detected.');
+        setTranscript(text);
+        setLastHeard(text);
+        await submit(text);
+    }
+    catch (e) {
+        setM('error', `Voice capture failed: ${e instanceof Error ? e.message : 'Could not transcribe the recording.'}`);
+    } }
+    async function submit(v = transcript) { const text = v.trim(); if (!text || submitting.current)
+        return; submitting.current = true; setLastHeard(text); setM('working', 'Transcript received. Tauranto is interpreting and routing the command…'); try {
+        const reply = await onCommand(draft(text));
+        const spoken = typeof reply === 'string' && reply.trim() ? reply.trim() : 'Done.';
+        setM('working', spoken);
+        Speech.stop();
+        Speech.speak(spoken, { rate: .96, onDone: () => { submitting.current = false; setM(enabled ? 'standby' : 'off', enabled ? 'Ready for the next command.' : 'Voice is off.'); }, onStopped: () => { submitting.current = false; setM(enabled ? 'standby' : 'off', 'Ready for the next command.'); } });
+    }
+    catch (e) {
+        submitting.current = false;
+        const d = e instanceof Error ? e.message : 'Could not process that instruction.';
+        setM('error', `Command failed: ${d}`);
+        Speech.speak(`I couldn't complete that instruction. ${d}`, { rate: .96 });
+    } }
+    if (!visible)
+        return null;
+    const active = mode === 'recording', working = mode === 'working' || mode === 'transcribing', bad = mode === 'error';
+    return <View><View style={s.card}><View style={s.top}><View style={[s.dot, mode === 'standby' && s.ready, active && s.live, bad && s.bad]}/><View style={{ flex: 1 }}><Text style={s.status}>{mode === 'off' ? 'Voice off' : mode === 'standby' ? 'Voice standby' : active ? 'Recording' : mode === 'transcribing' ? 'Transcribing' : mode === 'working' ? 'Tauranto is working' : 'Voice needs attention'}</Text><Text style={s.statusCopy}>{message}</Text></View><Switch value={enabled} onValueChange={onEnabledChange}/></View>{!!lastHeard && <View style={s.transcript}><Text style={s.label}>TAURANTO HEARD</Text><Text style={s.transcriptText}>“{lastHeard}”</Text></View>}<Pressable disabled={working} onPress={() => void (active ? finishRecording() : beginRecording())} style={[s.speak, active && s.stop, working && { opacity: .6 }]}><Ionicons name={active ? 'stop' : 'mic'} size={27} color='white'/><View style={{ flex: 1 }}><Text style={s.speakTitle}>{active ? 'Recording…' : 'Speak now'}</Text><Text style={s.speakCopy}>{active ? 'Stops automatically after five seconds' : 'Tauranto records for five seconds, then executes.'}</Text></View></Pressable><Pressable onPress={() => setManual(x => !x)} style={s.type}><Ionicons name='keypad-outline' size={22} color={colors.ink}/><Text style={s.typeText}>{manual ? 'Close typing' : 'Type instead'}</Text></Pressable></View>{manual && <View style={s.inputBar}><TextInput value={transcript} onChangeText={setTranscript} multiline placeholder='Type a restaurant instruction' style={s.input}/><Pressable onPress={() => void submit()} style={s.send}><Ionicons name='arrow-up' size={22} color='white'/></Pressable></View>}</View>;
+}
+const s = StyleSheet.create({ card: { backgroundColor: '#F5FFFA', borderRadius: 26, padding: 20, borderWidth: 1, borderColor: '#CDEFE0', ...shadow }, top: { flexDirection: 'row', alignItems: 'center', gap: 12 }, dot: { width: 13, height: 13, borderRadius: 7, backgroundColor: colors.muted }, ready: { backgroundColor: colors.leaf }, live: { backgroundColor: colors.tomato }, bad: { backgroundColor: '#B42318' }, status: { fontFamily: 'NunitoSans_900Black', fontSize: 18, color: colors.ink }, statusCopy: { fontFamily: 'NunitoSans_600SemiBold', fontSize: 13, lineHeight: 19, color: colors.inkSoft, marginTop: 3 }, transcript: { backgroundColor: '#FFFFFF', borderRadius: radius.md, padding: 15, marginTop: 15 }, label: { fontFamily: 'NunitoSans_900Black', fontSize: 11, letterSpacing: 1, color: colors.leafDeep }, transcriptText: { fontFamily: 'NunitoSans_800ExtraBold', fontSize: 17, lineHeight: 24, color: colors.ink, marginTop: 7 }, speak: { minHeight: 72, borderRadius: 18, backgroundColor: colors.leaf, flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 16, marginTop: 17 }, stop: { backgroundColor: colors.tomato }, speakTitle: { fontFamily: 'NunitoSans_900Black', fontSize: 16, color: 'white' }, speakCopy: { fontFamily: 'NunitoSans_600SemiBold', fontSize: 12.5, color: '#FFFFFFE5', marginTop: 3 }, type: { height: 54, borderRadius: 16, backgroundColor: colors.paper, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderWidth: 1, borderColor: colors.line, marginTop: 10 }, typeText: { fontFamily: 'NunitoSans_900Black', fontSize: 15, color: colors.ink }, inputBar: { flexDirection: 'row', alignItems: 'flex-end', backgroundColor: colors.paper, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, marginTop: 10, padding: 9, gap: 8 }, input: { flex: 1, minHeight: 50, maxHeight: 110, fontFamily: 'NunitoSans_600SemiBold', fontSize: 16, color: colors.ink, padding: 10 }, send: { width: 50, height: 50, borderRadius: 15, backgroundColor: colors.leaf, alignItems: 'center', justifyContent: 'center' } });

@@ -1,14 +1,158 @@
-import {Resend} from "resend";import {admin} from "./http";import {decryptCredentials,encryptCredentials} from "./credentials";
-const str=(x:any,...keys:string[])=>String(keys.map(k=>x?.[k]).find(v=>v!==undefined&&v!==null&&String(v).trim())||"");
-async function refreshOAuth(db:any,i:any,kind:string){let c:any=decryptCredentials(i.encrypted_credentials);if(c.expires_at&&Date.now()<Number(c.expires_at)-60000)return c.access_token;if(c.access_token&&!c.expires_at)return c.access_token;if(!c.refresh_token)throw new Error(`${kind.toUpperCase()}_RECONNECT_REQUIRED`);let url='',body:any,headers:any={"Content-Type":"application/x-www-form-urlencoded"};if(kind==='google'){url='https://oauth2.googleapis.com/token';body=new URLSearchParams({client_id:process.env.GOOGLE_CLIENT_ID||'',client_secret:process.env.GOOGLE_CLIENT_SECRET||'',refresh_token:c.refresh_token,grant_type:'refresh_token'})}else if(kind==='zoom'){url='https://zoom.us/oauth/token';headers.Authorization=`Basic ${Buffer.from(`${process.env.ZOOM_CLIENT_ID||''}:${process.env.ZOOM_CLIENT_SECRET||''}`).toString('base64')}`;body=new URLSearchParams({grant_type:'refresh_token',refresh_token:c.refresh_token})}else throw new Error('TOKEN_REFRESH_UNSUPPORTED');const r=await fetch(url,{method:'POST',headers,body}),j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error_description||j.message||`${kind.toUpperCase()}_TOKEN_REFRESH_FAILED`);c={...c,...j,refresh_token:j.refresh_token||c.refresh_token,expires_at:Date.now()+Number(j.expires_in||3600)*1000};await db.from('integrations').update({encrypted_credentials:encryptCredentials(c)}).eq('id',i.id);return c.access_token}
-async function googleAccess(db:any,i:any){return refreshOAuth(db,i,'google')}
-async function twilioSms(to:string,body:string){const sid=process.env.TWILIO_ACCOUNT_SID,token=process.env.TWILIO_AUTH_TOKEN,from=process.env.TWILIO_FROM_NUMBER;if(!sid||!token||!from)throw new Error('SMS_NOT_CONFIGURED');const r=await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,{method:'POST',headers:{Authorization:`Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({To:to,From:from,Body:body})});const j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||`SMS_FAILED_${r.status}`);return{verified:!!j.sid,method:'twilio_accepted',messageSid:j.sid}}
-function rawEmail(to:string,subject:string,body:string){return Buffer.from([`To: ${to}`,`Subject: ${subject}`,'MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8','',body].join('\r\n')).toString('base64url')}
-async function gmailSend(db:any,i:any,to:string,subject:string,body:string){const token=await googleAccess(db,i),r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({raw:rawEmail(to,subject,body)})}),j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error?.message||`GMAIL_SEND_FAILED_${r.status}`);return{verified:!!j.id,method:'gmail_accepted',messageId:j.id}}
-async function calendar(db:any,i:any,action:string,p:any,title:string,summary:string){const token=await googleAccess(db,i),h={Authorization:`Bearer ${token}`,'Content-Type':'application/json'},base='https://www.googleapis.com/calendar/v3/calendars/primary/events';if(action==='create_meeting'||action==='create_task'||action==='create_closure'){const start=str(p,'start_time','scheduled_at','resolved_datetime','execute_at'),mins=Number(p.duration_minutes||30),startDate=new Date(start||Date.now()),end=new Date(startDate.getTime()+mins*60000),attendee=str(p,'attendee_email','recipient_email','email');const wantsMeet=action==='create_meeting'&&String(p.video_provider||'google_meet').toLowerCase()!=='zoom';const event:any={summary:title,description:summary,start:{dateTime:startDate.toISOString(),timeZone:str(p,'timezone')||undefined},end:{dateTime:end.toISOString(),timeZone:str(p,'timezone')||undefined}};if(attendee)event.attendees=[{email:attendee}];if(wantsMeet)event.conferenceData={createRequest:{requestId:`tauranto-${Date.now()}-${Math.random().toString(36).slice(2,10)}`,conferenceSolutionKey:{type:'hangoutsMeet'}}};if(p.zoom_join_url)event.location=p.zoom_join_url,event.description=`${summary}\n\nZoom: ${p.zoom_join_url}`;const query=wantsMeet?'?sendUpdates=all&conferenceDataVersion=1':'?sendUpdates=all';const r=await fetch(`${base}${query}`,{method:'POST',headers:h,body:JSON.stringify(event)}),j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error?.message||`CALENDAR_CREATE_FAILED_${r.status}`);const meetUrl=j.hangoutLink||j.conferenceData?.entryPoints?.find((e:any)=>e.entryPointType==='video')?.uri;return{verified:!!j.id,method:'google_calendar',eventId:j.id,htmlLink:j.htmlLink,meetUrl:meetUrl||undefined,conferenceStatus:j.conferenceData?.createRequest?.status?.statusCode,attendeeEmail:attendee||undefined,invitationSent:!!attendee,attendeeStatus:j.attendees?.[0]?.responseStatus||undefined,start:j.start?.dateTime,end:j.end?.dateTime}}const id=encodeURIComponent(str(p,'event_id','meeting_id'));if(!id)throw new Error('CALENDAR_EVENT_ID_REQUIRED');if(action==='delete_meeting'){const r=await fetch(`${base}/${id}?sendUpdates=all`,{method:'DELETE',headers:h});if(!r.ok&&r.status!==204)throw new Error(`CALENDAR_DELETE_FAILED_${r.status}`);return{verified:true,method:'google_calendar_deleted',eventId:id}}const r=await fetch(`${base}/${id}?conferenceDataVersion=1`,{method:'PATCH',headers:h,body:JSON.stringify(p)}),j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error?.message||`CALENDAR_UPDATE_FAILED_${r.status}`);return{verified:!!j.id,method:'google_calendar_updated',eventId:j.id,htmlLink:j.htmlLink,meetUrl:j.hangoutLink}}
-async function zoomCreate(db:any,i:any,p:any,title:string){const token=await refreshOAuth(db,i,'zoom'),r=await fetch('https://api.zoom.us/v2/users/me/meetings',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({topic:title,type:2,start_time:str(p,'start_time','scheduled_at','resolved_datetime'),duration:Number(p.duration_minutes||30),timezone:str(p,'timezone')||'UTC',agenda:str(p,'agenda','description')})}),j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||`ZOOM_CREATE_FAILED_${r.status}`);return{verified:!!j.id,method:'zoom',meetingId:j.id,joinUrl:j.join_url}}
-async function bearerCall(i:any,url:string,method:string,body:any){const c:any=decryptCredentials(i.encrypted_credentials),r=await fetch(url,{method,headers:{Authorization:`Bearer ${c.access_token}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||j.error||`PROVIDER_FAILED_${r.status}`);return j}
-export async function executeJob(job:any){const db=admin(),{data:command}=await db.from('commands').select('*,restaurants(name)').eq('id',job.command_id).single();if(!command||command.status!=='approved')throw new Error('COMMAND_NOT_APPROVED');const {data:integrations}=await db.from('integrations').select('*').eq('restaurant_id',command.restaurant_id).eq('status','connected');await event(db,command,job,'execute','executing',{provider:job.provider,action:job.action_key});const p=job.payload||{};let v:any={verified:false};const integration=(name:string)=>(integrations||[]).find((i:any)=>i.provider===name);
-if(job.provider==='sms')v=await twilioSms(str(p,'recipient_phone','phone'),str(p,'message','body','purpose')||command.summary);else if(job.provider==='gmail'){const i=integration('gmail');if(!i)throw new Error('GMAIL_NOT_CONNECTED');v=await gmailSend(db,i,str(p,'recipient_email','email','to'),command.title,str(p,'message','body','purpose')||command.summary)}else if(job.provider==='google_calendar'){const i=integration('google_calendar');if(!i)throw new Error('GOOGLE_CALENDAR_NOT_CONNECTED');v=await calendar(db,i,job.action_key,p,command.title,command.summary)}else if(job.provider==='zoom'){const i=integration('zoom');if(!i)throw new Error('ZOOM_NOT_CONNECTED');v=await zoomCreate(db,i,p,command.title)}else if(job.provider==='hubspot'){const i=integration('hubspot');if(!i)throw new Error('HUBSPOT_NOT_CONNECTED');let url='https://api.hubapi.com/crm/v3/objects/contacts',method='POST',body:any={properties:p.properties||p};if(job.action_key==='update_contact'){const id=str(p,'contact_id','id');url+=`/${encodeURIComponent(id)}`;method='PATCH'}else if(job.action_key==='create_note'){url='https://api.hubapi.com/crm/v3/objects/notes'}else if(job.action_key==='create_task'){url='https://api.hubapi.com/crm/v3/objects/tasks'}const j=await bearerCall(i,url,method,body);v={verified:!!j.id,method:'hubspot',id:j.id}}else if(job.provider==='slack'){const i=integration('slack');if(!i)throw new Error('SLACK_NOT_CONNECTED');const j=await bearerCall(i,'https://slack.com/api/chat.postMessage','POST',{channel:str(p,'channel','channel_id'),text:str(p,'message','text')||command.summary});if(j.ok===false)throw new Error(j.error||'SLACK_FAILED');v={verified:!!j.ok,method:'slack',ts:j.ts}}else if(job.provider==='email'){const to=str(p,'recipient_email','email','to');if(!process.env.RESEND_API_KEY||!process.env.NOTIFICATION_FROM)throw new Error('EMAIL_NOT_CONFIGURED');const r:any=await new Resend(process.env.RESEND_API_KEY).emails.send({from:process.env.NOTIFICATION_FROM,to,subject:command.title,text:str(p,'message','body')||command.summary});if(r.error)throw new Error(r.error.message);v={verified:!!r.data?.id,method:'resend',messageId:r.data?.id}}else if(job.provider==='staff'){v={verified:true,method:'internal'}}else{const i=integration(job.provider)||integration('custom_webhook');if(!i?.config?.url)throw new Error(`NO_${String(job.provider).toUpperCase()}_CONNECTOR`);const r=await fetch(i.config.url,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':job.idempotency_key,'X-Tauranto-Signature':process.env.CONNECTOR_WEBHOOK_SECRET||''},body:JSON.stringify({commandId:command.id,provider:job.provider,action:job.action_key,parameters:p,approved:true})});if(!r.ok)throw new Error(`CONNECTOR_FAILED_${r.status}`);const j:any=await r.json().catch(()=>({}));v={verified:j.verified===true,method:'connector',observed:j.observed};if(!v.verified)throw new Error('EXECUTED_BUT_NOT_VERIFIED')}
-if(!v.verified)throw new Error('DELIVERY_NOT_VERIFIED');await db.from('execution_jobs').update({status:'completed',completed_at:new Date().toISOString(),verification:v}).eq('id',job.id);await event(db,command,job,'verify','completed',v);const {data:remaining}=await db.from('execution_jobs').select('status').eq('command_id',command.id);if((remaining||[]).every((j:any)=>j.status==='completed')){await db.from('commands').update({status:'completed',verified_at:new Date().toISOString()}).eq('id',command.id);await event(db,command,job,'notify','completed',{message:'All approved actions verified'})}}
-async function event(db:any,command:any,job:any,stage:string,status:string,detail:any){await db.from('operation_events').insert({restaurant_id:command.restaurant_id,command_id:command.id,job_id:job.id,stage,status,detail})}
+import { Resend } from "resend";
+import { admin } from "./http";
+import { decryptCredentials, encryptCredentials } from "./credentials";
+const str = (x: any, ...keys: string[]) => String(keys.map(k => x?.[k]).find(v => v !== undefined && v !== null && String(v).trim()) || "");
+async function refreshOAuth(db: any, i: any, kind: string) { let c: any = decryptCredentials(i.encrypted_credentials); if (c.expires_at && Date.now() < Number(c.expires_at) - 60000)
+    return c.access_token; if (c.access_token && !c.expires_at)
+    return c.access_token; if (!c.refresh_token)
+    throw new Error(`${kind.toUpperCase()}_RECONNECT_REQUIRED`); let url = '', body: any, headers: any = { "Content-Type": "application/x-www-form-urlencoded" }; if (kind === 'google') {
+    url = 'https://oauth2.googleapis.com/token';
+    body = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID || '', client_secret: process.env.GOOGLE_CLIENT_SECRET || '', refresh_token: c.refresh_token, grant_type: 'refresh_token' });
+}
+else if (kind === 'zoom') {
+    url = 'https://zoom.us/oauth/token';
+    headers.Authorization = `Basic ${Buffer.from(`${process.env.ZOOM_CLIENT_ID || ''}:${process.env.ZOOM_CLIENT_SECRET || ''}`).toString('base64')}`;
+    body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: c.refresh_token });
+}
+else
+    throw new Error('TOKEN_REFRESH_UNSUPPORTED'); const r = await fetch(url, { method: 'POST', headers, body }), j: any = await r.json().catch(() => ({})); if (!r.ok)
+    throw new Error(j.error_description || j.message || `${kind.toUpperCase()}_TOKEN_REFRESH_FAILED`); c = { ...c, ...j, refresh_token: j.refresh_token || c.refresh_token, expires_at: Date.now() + Number(j.expires_in || 3600) * 1000 }; await db.from('integrations').update({ encrypted_credentials: encryptCredentials(c) }).eq('id', i.id); return c.access_token; }
+async function googleAccess(db: any, i: any) { return refreshOAuth(db, i, 'google'); }
+async function twilioSms(to: string, body: string) { const sid = process.env.TWILIO_ACCOUNT_SID, token = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_FROM_NUMBER; if (!sid || !token || !from)
+    throw new Error('SMS_NOT_CONFIGURED'); const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ To: to, From: from, Body: body }) }); const j: any = await r.json().catch(() => ({})); if (!r.ok)
+    throw new Error(j.message || `SMS_FAILED_${r.status}`); return { verified: !!j.sid, method: 'twilio_accepted', messageSid: j.sid }; }
+function rawEmail(to: string, subject: string, body: string) { return Buffer.from([`To: ${to}`, `Subject: ${subject}`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', '', body].join('\r\n')).toString('base64url'); }
+async function gmailSend(db: any, i: any, to: string, subject: string, body: string) { const token = await googleAccess(db, i), r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ raw: rawEmail(to, subject, body) }) }), j: any = await r.json().catch(() => ({})); if (!r.ok)
+    throw new Error(j.error?.message || `GMAIL_SEND_FAILED_${r.status}`); return { verified: !!j.id, method: 'gmail_accepted', messageId: j.id }; }
+async function calendar(db: any, i: any, action: string, p: any, title: string, summary: string) { const token = await googleAccess(db, i), h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, base = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'; if (action === 'create_meeting' || action === 'create_task' || action === 'create_closure') {
+    const start = str(p, 'start_time', 'scheduled_at', 'resolved_datetime', 'execute_at'), mins = Number(p.duration_minutes || 30), startDate = new Date(start || Date.now()), end = new Date(startDate.getTime() + mins * 60000), attendee = str(p, 'attendee_email', 'recipient_email', 'email');
+    const wantsMeet = action === 'create_meeting' && String(p.video_provider || 'google_meet').toLowerCase() !== 'zoom';
+    const event: any = { summary: title, description: summary, start: { dateTime: startDate.toISOString(), timeZone: str(p, 'timezone') || undefined }, end: { dateTime: end.toISOString(), timeZone: str(p, 'timezone') || undefined } };
+    if (attendee)
+        event.attendees = [{ email: attendee }];
+    if (wantsMeet)
+        event.conferenceData = { createRequest: { requestId: `tauranto-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, conferenceSolutionKey: { type: 'hangoutsMeet' } } };
+    if (p.zoom_join_url)
+        event.location = p.zoom_join_url, event.description = `${summary}\n\nZoom: ${p.zoom_join_url}`;
+    const query = wantsMeet ? '?sendUpdates=all&conferenceDataVersion=1' : '?sendUpdates=all';
+    const r = await fetch(`${base}${query}`, { method: 'POST', headers: h, body: JSON.stringify(event) }), j: any = await r.json().catch(() => ({}));
+    if (!r.ok)
+        throw new Error(j.error?.message || `CALENDAR_CREATE_FAILED_${r.status}`);
+    const meetUrl = j.hangoutLink || j.conferenceData?.entryPoints?.find((e: any) => e.entryPointType === 'video')?.uri;
+    return { verified: !!j.id, method: 'google_calendar', eventId: j.id, htmlLink: j.htmlLink, meetUrl: meetUrl || undefined, conferenceStatus: j.conferenceData?.createRequest?.status?.statusCode, attendeeEmail: attendee || undefined, invitationSent: !!attendee, attendeeStatus: j.attendees?.[0]?.responseStatus || undefined, start: j.start?.dateTime, end: j.end?.dateTime };
+} const id = encodeURIComponent(str(p, 'event_id', 'meeting_id')); if (!id)
+    throw new Error('CALENDAR_EVENT_ID_REQUIRED'); if (action === 'delete_meeting') {
+    const r = await fetch(`${base}/${id}?sendUpdates=all`, { method: 'DELETE', headers: h });
+    if (!r.ok && r.status !== 204)
+        throw new Error(`CALENDAR_DELETE_FAILED_${r.status}`);
+    return { verified: true, method: 'google_calendar_deleted', eventId: id };
+} const r = await fetch(`${base}/${id}?conferenceDataVersion=1`, { method: 'PATCH', headers: h, body: JSON.stringify(p) }), j: any = await r.json().catch(() => ({})); if (!r.ok)
+    throw new Error(j.error?.message || `CALENDAR_UPDATE_FAILED_${r.status}`); return { verified: !!j.id, method: 'google_calendar_updated', eventId: j.id, htmlLink: j.htmlLink, meetUrl: j.hangoutLink }; }
+async function zoomCreate(db: any, i: any, p: any, title: string) { const token = await refreshOAuth(db, i, 'zoom'), r = await fetch('https://api.zoom.us/v2/users/me/meetings', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: title, type: 2, start_time: str(p, 'start_time', 'scheduled_at', 'resolved_datetime'), duration: Number(p.duration_minutes || 30), timezone: str(p, 'timezone') || 'UTC', agenda: str(p, 'agenda', 'description') }) }), j: any = await r.json().catch(() => ({})); if (!r.ok)
+    throw new Error(j.message || `ZOOM_CREATE_FAILED_${r.status}`); return { verified: !!j.id, method: 'zoom', meetingId: j.id, joinUrl: j.join_url }; }
+async function bearerCall(i: any, url: string, method: string, body: any) { const c: any = decryptCredentials(i.encrypted_credentials), r = await fetch(url, { method, headers: { Authorization: `Bearer ${c.access_token}`, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }), j: any = await r.json().catch(() => ({})); if (!r.ok)
+    throw new Error(j.message || j.error || `PROVIDER_FAILED_${r.status}`); return j; }
+export async function executeJob(job: any) {
+    const db = admin(), { data: command } = await db.from('commands').select('*,restaurants(name)').eq('id', job.command_id).single();
+    if (!command || command.status !== 'approved')
+        throw new Error('COMMAND_NOT_APPROVED');
+    const { data: integrations } = await db.from('integrations').select('*').eq('restaurant_id', command.restaurant_id).eq('status', 'connected');
+    await event(db, command, job, 'execute', 'executing', { provider: job.provider, action: job.action_key });
+    const p = job.payload || {};
+    let v: any = { verified: false };
+    const integration = (name: string) => (integrations || []).find((i: any) => i.provider === name);
+    if (job.provider === 'sms')
+        v = await twilioSms(str(p, 'recipient_phone', 'phone'), str(p, 'message', 'body', 'purpose') || command.summary);
+    else if (job.provider === 'gmail') {
+        const i = integration('gmail');
+        if (!i)
+            throw new Error('GMAIL_NOT_CONNECTED');
+        v = await gmailSend(db, i, str(p, 'recipient_email', 'email', 'to'), command.title, str(p, 'message', 'body', 'purpose') || command.summary);
+    }
+    else if (job.provider === 'google_calendar') {
+        const i = integration('google_calendar');
+        if (!i)
+            throw new Error('GOOGLE_CALENDAR_NOT_CONNECTED');
+        v = await calendar(db, i, job.action_key, p, command.title, command.summary);
+    }
+    else if (job.provider === 'zoom') {
+        const i = integration('zoom');
+        if (!i)
+            throw new Error('ZOOM_NOT_CONNECTED');
+        v = await zoomCreate(db, i, p, command.title);
+    }
+    else if (job.provider === 'hubspot') {
+        const i = integration('hubspot');
+        if (!i)
+            throw new Error('HUBSPOT_NOT_CONNECTED');
+        let url = 'https://api.hubapi.com/crm/v3/objects/contacts', method = 'POST', body: any = { properties: p.properties || p };
+        if (job.action_key === 'update_contact') {
+            const id = str(p, 'contact_id', 'id');
+            url += `/${encodeURIComponent(id)}`;
+            method = 'PATCH';
+        }
+        else if (job.action_key === 'create_note') {
+            url = 'https://api.hubapi.com/crm/v3/objects/notes';
+        }
+        else if (job.action_key === 'create_task') {
+            url = 'https://api.hubapi.com/crm/v3/objects/tasks';
+        }
+        const j = await bearerCall(i, url, method, body);
+        v = { verified: !!j.id, method: 'hubspot', id: j.id };
+    }
+    else if (job.provider === 'slack') {
+        const i = integration('slack');
+        if (!i)
+            throw new Error('SLACK_NOT_CONNECTED');
+        const j = await bearerCall(i, 'https://slack.com/api/chat.postMessage', 'POST', { channel: str(p, 'channel', 'channel_id'), text: str(p, 'message', 'text') || command.summary });
+        if (j.ok === false)
+            throw new Error(j.error || 'SLACK_FAILED');
+        v = { verified: !!j.ok, method: 'slack', ts: j.ts };
+    }
+    else if (job.provider === 'email') {
+        const to = str(p, 'recipient_email', 'email', 'to');
+        if (!process.env.RESEND_API_KEY || !process.env.NOTIFICATION_FROM)
+            throw new Error('EMAIL_NOT_CONFIGURED');
+        const r: any = await new Resend(process.env.RESEND_API_KEY).emails.send({ from: process.env.NOTIFICATION_FROM, to, subject: command.title, text: str(p, 'message', 'body') || command.summary });
+        if (r.error)
+            throw new Error(r.error.message);
+        v = { verified: !!r.data?.id, method: 'resend', messageId: r.data?.id };
+    }
+    else if (job.provider === 'staff') {
+        const recipients = [...new Set([p.recipient_email, p.email, ...(Array.isArray(p.recipient_emails) ? p.recipient_emails : []), ...(Array.isArray(p.recipients) ? p.recipients : [])].filter((x: unknown) => typeof x === 'string' && x.includes('@')))] as string[];
+        if (!recipients.length)
+            throw new Error('STAFF_RECIPIENTS_REQUIRED');
+        if (!process.env.RESEND_API_KEY || !process.env.NOTIFICATION_FROM)
+            throw new Error('EMAIL_NOT_CONFIGURED');
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        const deliveries = await Promise.all(recipients.map(to => resend.emails.send({ from: process.env.NOTIFICATION_FROM!, to, subject: command.title, text: str(p, 'message', 'body') || command.summary })));
+        const failed: any = deliveries.find((result: any) => result.error);
+        if (failed?.error)
+            throw new Error(failed.error.message || 'STAFF_DELIVERY_FAILED');
+        v = { verified: deliveries.every((result: any) => !!result.data?.id), method: 'resend', messageIds: deliveries.map((result: any) => result.data?.id) };
+        if (!v.verified)
+            throw new Error('STAFF_DELIVERY_NOT_VERIFIED');
+    }
+    else {
+        const i = integration(job.provider) || integration('custom_webhook');
+        if (!i?.config?.url)
+            throw new Error(`NO_${String(job.provider).toUpperCase()}_CONNECTOR`);
+        const r = await fetch(i.config.url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': job.idempotency_key, 'X-Tauranto-Signature': process.env.CONNECTOR_WEBHOOK_SECRET || '' }, body: JSON.stringify({ commandId: command.id, provider: job.provider, action: job.action_key, parameters: p, approved: true }) });
+        if (!r.ok)
+            throw new Error(`CONNECTOR_FAILED_${r.status}`);
+        const j: any = await r.json().catch(() => ({}));
+        v = { verified: j.verified === true, method: 'connector', observed: j.observed };
+        if (!v.verified)
+            throw new Error('EXECUTED_BUT_NOT_VERIFIED');
+    }
+    if (!v.verified)
+        throw new Error('DELIVERY_NOT_VERIFIED');
+    await db.from('execution_jobs').update({ status: 'completed', completed_at: new Date().toISOString(), verification: v }).eq('id', job.id);
+    await event(db, command, job, 'verify', 'completed', v);
+    const { data: remaining } = await db.from('execution_jobs').select('status').eq('command_id', command.id);
+    if ((remaining || []).every((j: any) => j.status === 'completed')) {
+        await db.from('commands').update({ status: 'completed', verified_at: new Date().toISOString() }).eq('id', command.id);
+        await event(db, command, job, 'notify', 'completed', { message: 'All approved actions verified' });
+    }
+}
+async function event(db: any, command: any, job: any, stage: string, status: string, detail: any) { await db.from('operation_events').insert({ restaurant_id: command.restaurant_id, command_id: command.id, job_id: job.id, stage, status, detail }); }

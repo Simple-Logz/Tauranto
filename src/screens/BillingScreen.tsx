@@ -1,14 +1,14 @@
 import React,{useEffect,useState}from"react";
-import{ActivityIndicator,Alert,Pressable,ScrollView,StyleSheet,Text,View}from"react-native";
+import{ActivityIndicator,Alert,Linking,Pressable,ScrollView,StyleSheet,Text,View}from"react-native";
 import{Ionicons}from"@expo/vector-icons";
 import{useSafeAreaInsets}from"react-native-safe-area-context";
-import{taurantoApi}from"../lib/api";
+import{billingApi,taurantoApi}from"../lib/api";
 
 export function BillingScreen({restaurantId,onBack}:{restaurantId:string;onBack:()=>void}){
  const inset=useSafeAreaInsets(),[subscription,setSubscription]=useState<any>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState("");
  const load=async()=>{setLoading(true);try{const x=await taurantoApi.subscription(restaurantId);setSubscription(x.subscription)}catch(e){Alert.alert("Billing unavailable",e instanceof Error?e.message:"Please retry.")}finally{setLoading(false)}};
  useEffect(()=>{void load()},[restaurantId]);
- const choose=async(id:"free"|"basic"|"enterprise")=>{if(subscription?.plans?.id===id)return;setBusy(id);try{const x=await taurantoApi.switchPlan(restaurantId,id);setSubscription(x.subscription);Alert.alert("Plan updated",`Your restaurant is now on ${x.subscription.plans.name}.`)}catch(e){Alert.alert("Could not update plan",e instanceof Error?e.message:"Please retry.")}finally{setBusy("")}};
+ const choose=async(id:"free"|"basic"|"enterprise")=>{if(subscription?.plans?.id===id)return;setBusy(id);try{if(id==="free"){const x=await taurantoApi.switchPlan(restaurantId,id);setSubscription(x.subscription);Alert.alert("Plan updated","Your restaurant is now on Free.");return}const x=await billingApi.checkout(restaurantId,id);await Linking.openURL(x.url)}catch(e){const message=e instanceof Error?e.message:"Please retry.";Alert.alert(message==="STRIPE_NOT_CONFIGURED"?"Billing setup required":"Could not start checkout",message==="STRIPE_NOT_CONFIGURED"?"Stripe credentials and price IDs must be added before paid plans can be activated.":message)}finally{setBusy("")}};
  if(loading)return <View style={s.loading}><ActivityIndicator color="#168760"/></View>;
  return <ScrollView style={s.page} contentContainerStyle={{paddingTop:inset.top+14,paddingHorizontal:18,paddingBottom:110}}><View style={s.header}><Pressable onPress={onBack} style={s.back}><Ionicons name="arrow-back" size={20}/></Pressable><View><Text style={s.kicker}>ACCOUNT</Text><Text style={s.title}>Plans & billing</Text></View></View><View style={s.status}><Text style={s.statusLabel}>CURRENT PLAN</Text><Text style={s.statusName}>{subscription?.plans?.name||"Free"}</Text><Text style={s.statusCopy}>{subscription?.status||"active"} · Changes are saved to your restaurant subscription.</Text></View><Plan id="free" name="Free" price="$0" current={subscription?.plans?.id==="free"} busy={busy==="free"} onPress={()=>choose("free")} features={["Voice and typed commands","Recent activity","1 restaurant workspace","1 owner account"]}/><Plan id="basic" name="Basic" price="$14.99" current={subscription?.plans?.id==="basic"} busy={busy==="basic"} onPress={()=>choose("basic")} features={["Everything in Free","Manager approvals","Full activity history","Gmail, Calendar and website","Up to 3 managers"]}/><Plan id="enterprise" name="Enterprise" price="$29.99" current={subscription?.plans?.id==="enterprise"} busy={busy==="enterprise"} onPress={()=>choose("enterprise")} features={["Everything in Basic","POS and business integrations","Operations directory","Multi-location operations","Advanced audit controls"]}/></ScrollView>
 }

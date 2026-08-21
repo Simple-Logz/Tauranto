@@ -10,24 +10,16 @@ type Props={
 };
 
 export function SettingsPanel({preferences,onPreference,onSave,saving}:Props){
- const notifications=preferences?.notifications||{},voice=preferences?.voice||{},privacy=preferences?.privacy||{},appearance=preferences?.appearance||"light";
+ const notifications=preferences?.notifications||{},privacy=preferences?.privacy||{};
  return <View>
   <View style={{padding:14,borderRadius:16,borderWidth:1,borderColor:'#BFEAD5',backgroundColor:'#EDFFF6',flexDirection:'row',gap:10,alignItems:'center',marginBottom:20}}><Ionicons name="cloud-done-outline" size={22} color="#168760"/><View style={{flex:1}}><Text style={{fontFamily:'NunitoSans_900Black',fontSize:14,color:'#176B4D'}}>Restaurant database settings</Text><Text style={{fontFamily:'NunitoSans_600SemiBold',fontSize:11,color:'#587267',marginTop:3}}>Controls below are loaded from and saved to this workspace.</Text></View></View>
   <Section title="Account">
    <SettingRow icon="notifications-outline" title="Approval notifications" value={!!notifications.approval_email} onChange={(v:boolean)=>onPreference("notifications","approval_email",v)}/>
   </Section>
   <Section title="Restaurant preferences">
-   <SettingRow icon="mic-outline" title="Voice standby by default" value={!!voice.standby} onChange={(v:boolean)=>onPreference("voice","standby",v)}/>
-   <SettingRow icon="volume-high-outline" title="Spoken acknowledgements" value={!!voice.spoken_confirmations} onChange={(v:boolean)=>onPreference("voice","spoken_confirmations",v)}/>
-   <SettingRow icon="warning-outline" title="Command failure alerts" value={!!notifications.command_failures} onChange={(v:boolean)=>onPreference("notifications","command_failures",v)}/>
-   <SettingRow icon="calendar-outline" title="Weekly operations summary" value={!!notifications.weekly_summary} onChange={(v:boolean)=>onPreference("notifications","weekly_summary",v)}/>
-   <Field icon="language-outline" title="Voice language" value={voice.language||"en-US"} onChange={(v:string)=>onPreference("voice","language",v)}/>
-  </Section>
-  <Section title="Appearance & access">
-   <ChoiceRow icon="sunny-outline" title="Theme" value={appearance==="dark"?"Dark":"Light"} onPress={()=>onPreference("root","appearance",appearance==="dark"?"light":"dark")}/>
+   <InfoRow icon="mic-outline" title="Voice capture" copy="Five-second capture with automatic stop"/>
   </Section>
   <Section title="Security & privacy">
-   <SettingRow icon="recording-outline" title="Retain command audio" value={!!privacy.retain_audio} onChange={(v:boolean)=>onPreference("privacy","retain_audio",v)}/>
    <Field icon="time-outline" title="Activity retention (days)" value={String(privacy.activity_retention_days||90)} keyboard="number-pad" onChange={(v:string)=>onPreference("privacy","activity_retention_days",Math.max(1,Number(v)||90))}/>
   </Section>
   <Pressable disabled={saving} onPress={onSave} style={s.save}>{saving?<ActivityIndicator color="#fff"/>:<Text style={s.saveText}>Save settings</Text>}</Pressable>
