@@ -6,7 +6,7 @@ import{taurantoApi,supabase}from"../lib/api";
 import{colors}from"../theme/tokens";
 import{IntegrationsScreen}from"./IntegrationsScreen";
 
-export function ProfileHub({restaurantId}:{restaurantId:string}){const[page,setPage]=useState<"profile"|"integrations">("profile");if(page==="profile")return <ProfileScreen restaurantId={restaurantId} onOpenIntegrations={()=>setPage("integrations")}/>;return <View style={s.hub}><View style={s.hubTop}><Pressable accessibilityLabel="Back to profile" onPress={()=>setPage("profile")} style={s.hubBack}><Ionicons name="arrow-back" size={21} color={colors.ink}/></Pressable><Text style={s.hubTitle}>Profile</Text></View><View style={{flex:1}}><IntegrationsScreen restaurantId={restaurantId}/></View></View>}
+export function ProfileHub({restaurantId,initialPage="profile"}:{restaurantId:string;initialPage?:"profile"|"integrations"}){const[page,setPage]=useState<"profile"|"integrations">(initialPage);if(page==="profile")return <ProfileScreen restaurantId={restaurantId} onOpenIntegrations={()=>setPage("integrations")}/>;return <View style={s.hub}><View style={s.hubTop}><Pressable accessibilityLabel="Back to profile" onPress={()=>setPage("profile")} style={s.hubBack}><Ionicons name="arrow-back" size={21} color={colors.ink}/></Pressable><Text style={s.hubTitle}>Integrations</Text></View><View style={{flex:1}}><IntegrationsScreen restaurantId={restaurantId}/></View></View>}
 
 export function ProfileScreen({restaurantId,onOpenIntegrations}:{restaurantId:string;onOpenIntegrations:()=>void}){
  const inset=useSafeAreaInsets(),[ws,setWs]=useState<any>(null),[name,setName]=useState(""),[restaurant,setRestaurant]=useState(""),[avatar,setAvatar]=useState(""),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
