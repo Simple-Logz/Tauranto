@@ -1,95 +1,48 @@
-import React from "react";
-import {ImageBackground,Pressable,ScrollView,StyleSheet,Text,useWindowDimensions,View} from "react-native";
-import {Ionicons} from "@expo/vector-icons";
-import {useSafeAreaInsets} from "react-native-safe-area-context";
-import {VoiceCommand} from "../lib/models";
+import React,{useEffect,useMemo,useRef,useState}from"react";
+import{ImageBackground,NativeScrollEvent,NativeSyntheticEvent,Pressable,ScrollView,StyleSheet,Text,useWindowDimensions,View}from"react-native";
+import{Ionicons}from"@expo/vector-icons";
+import{useSafeAreaInsets}from"react-native-safe-area-context";
+import{VoiceCommand}from"../lib/models";
+import{taurantoApi}from"../lib/api";
 
-type Props={commands:VoiceCommand[];onDecide:(id:string,approved:boolean)=>void;onOpenActivity:()=>void;onOpenVoice:()=>void};
+type Props={restaurantId:string;commands:VoiceCommand[];onDecide:(id:string,approved:boolean)=>void;onOpenActivity:()=>void;onOpenVoice:()=>void;onOpenProfile:()=>void};
+const C={ink:"#0B0F0D",green:"#00D084",deep:"#168760",muted:"#687079",line:"#DFE4E6"};
+const base="https://tauranto-operations.nyaoffiong10.chatgpt.site";
+const slides=[
+ {tag:"Hands-free control",title:"Run your kitchen by voice",copy:'Say “Hey Tauranto” while service keeps moving.',image:`${base}/carousel-kitchen.png`,icon:"mic-outline" as const},
+ {tag:"Operations in sync",title:"Lead without leaving the floor",copy:"Capture instructions and keep every team member aligned.",image:`${base}/carousel-manager.png`,icon:"people-outline" as const},
+ {tag:"Service intelligence",title:"Turn every request into action",copy:"Approve, execute, verify—and keep dinner service flowing.",image:`${base}/carousel-service.png`,icon:"checkmark-circle-outline" as const},
+];
 
-const C={ink:"#0B0F0D",paper:"#FFFFFF",card:"#FFFFFF",green:"#00B873",orange:"#E98247",muted:"#687079",line:"#DFE4E6"};
-const hero="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1400&q=90";
-
-export function HomeScreen({commands,onOpenActivity,onOpenVoice}:Props){
- const insets=useSafeAreaInsets();
- const {width}=useWindowDimensions();
- const pending=commands.filter(x=>x.status==="pending").length;
- const wide=width>720;
- return <ScrollView style={s.page} showsVerticalScrollIndicator={false} contentContainerStyle={[s.content,{paddingTop:insets.top+14,maxWidth:wide?900:620,alignSelf:"center",width:"100%"}]}>
-   <View style={s.greeting}>
-     <View style={{flex:1}}><Text style={s.hello}>Good morning, team</Text><Text style={s.sub}>Tauranto is listening and ready.</Text></View>
-     <Pressable onPress={onOpenActivity} style={s.bell}><Ionicons name="notifications-outline" size={24} color={C.ink}/>{pending>0&&<View style={s.badge}><Text style={s.badgeText}>{pending}</Text></View>}</Pressable>
-   </View>
-
-   <ImageBackground source={{uri:hero}} style={s.hero} imageStyle={s.heroImage}>
-     <View style={s.heroShade}/>
-     <View style={s.heroContent}>
-       <Text style={s.heroKicker}>TAURANTO · HANDS-FREE OPERATIONS</Text>
-       <Text style={s.heroTitle}>Your restaurant,{"\n"}always within earshot.</Text>
-       <Text style={s.heroCopy}>Speak naturally. Tauranto captures the request and keeps the shift moving.</Text>
-       <Pressable onPress={onOpenActivity} style={s.heroButton}><Text style={s.heroButtonText}>View activity</Text><Ionicons name="arrow-forward" size={21} color="#fff"/></Pressable>
-     </View>
-   </ImageBackground>
-
-   <Pressable onPress={onOpenVoice} style={s.voiceCard}>
-     <View style={s.voiceTop}>
-       <View style={s.mic}><Ionicons name="mic" size={30} color={C.green}/></View>
-       <View style={{flex:1}}><Text style={s.kicker}>VOICE OPERATIONS</Text><Text style={s.voiceTitle}>Hey Tauranto</Text></View>
-     </View>
-     <Text style={s.voiceSub}>Tell Tauranto what needs to happen next.</Text>
-     <View style={s.voicePills}><Pill icon="mic-outline" text="Speak"/><Pill icon="keypad-outline" text="Type"/><Pill icon="time-outline" text="Recent"/></View>
-   </Pressable>
-
-   <View style={s.sectionHead}><Text style={s.sectionTitle}>Shift overview</Text><Pressable onPress={onOpenActivity}><Text style={s.link}>View all</Text></Pressable></View>
-   <View style={s.statCard}>
-     <View><Text style={s.statLabel}>Needs your approval</Text><Text style={s.statValue}>{pending}</Text></View>
-     <View style={[s.statusPill,pending>0&&s.statusPillHot]}><Text style={[s.statusText,pending>0&&s.statusTextHot]}>{pending>0?"Action needed":"All clear"}</Text></View>
-   </View>
-   <View style={s.statCard}>
-     <View><Text style={s.statLabel}>Voice command</Text><Text style={s.statValueSmall}>Ready</Text></View>
-     <Pressable onPress={onOpenVoice} style={s.roundArrow}><Ionicons name="arrow-forward" size={21} color={C.green}/></Pressable>
-   </View>
- </ScrollView>
+export function HomeScreen({restaurantId,commands,onOpenActivity,onOpenVoice,onOpenProfile}:Props){
+ const inset=useSafeAreaInsets(),{width}=useWindowDimensions(),rail=useRef<ScrollView>(null),cardWidth=Math.min(width-32,574);
+ const[slide,setSlide]=useState(0),[workspace,setWorkspace]=useState<any>(null);
+ const pending=commands.filter(x=>x.status==="pending").length,completed=commands.filter(x=>x.status==="completed"||x.status==="approved").length;
+ useEffect(()=>{taurantoApi.workspace(restaurantId).then(setWorkspace).catch(()=>{})},[restaurantId]);
+ useEffect(()=>{const t=setInterval(()=>{const n=(slide+1)%slides.length;rail.current?.scrollTo({x:n*cardWidth,animated:true});setSlide(n)},5200);return()=>clearInterval(t)},[slide,cardWidth]);
+ const first=String(workspace?.profile?.full_name||"John Offiong").trim().split(/\s+/)[0]||"there",restaurant=workspace?.restaurant?.name||"Your restaurant";
+ const recent=useMemo(()=>commands.slice(0,3),[commands]);
+ const settle=(e:NativeSyntheticEvent<NativeScrollEvent>)=>setSlide(Math.round(e.nativeEvent.contentOffset.x/cardWidth));
+ return <View style={s.page}>
+  <View style={[s.top,{paddingTop:inset.top+7,height:inset.top+72}]}><View style={s.topLeft}><View style={s.circle}><Ionicons name="menu-outline" size={25} color={C.deep}/></View><Text numberOfLines={1} style={s.restaurant}>{restaurant}</Text></View><Pressable onPress={onOpenProfile} style={s.circle}><Ionicons name="restaurant-outline" size={22} color={C.deep}/></Pressable></View>
+  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.content,{paddingTop:inset.top+88,paddingBottom:132,maxWidth:620,alignSelf:"center",width:"100%"}]}>
+   <ScrollView ref={rail} horizontal pagingEnabled snapToInterval={cardWidth} decelerationRate="fast" showsHorizontalScrollIndicator={false} onMomentumScrollEnd={settle} contentContainerStyle={{paddingHorizontal:16}}>{slides.map(x=><ImageBackground key={x.title} source={{uri:x.image}} style={[s.hero,{width:cardWidth}]} imageStyle={s.heroImage}><View style={s.shade}/><View style={s.heroIcon}><Ionicons name={x.icon} size={25} color="#fff"/></View><Text style={s.tag}>{x.tag}</Text><Text style={s.heroTitle}>{x.title}</Text><Text style={s.heroCopy}>{x.copy}</Text><Text style={s.swipe}>Swipe to explore  ↔</Text></ImageBackground>)}</ScrollView>
+   <View style={s.dots}>{slides.map((_,i)=><Pressable key={i} onPress={()=>{rail.current?.scrollTo({x:i*cardWidth,animated:true});setSlide(i)}} style={[s.dot,slide===i&&s.dotOn]}/>)}</View>
+   <View style={s.greeting}><Text style={s.hello}>Good evening, {first}</Text><View style={s.track}><Text style={s.trackText}>On track</Text><View style={s.trackDot}/></View></View>
+   <Pressable onPress={onOpenVoice} style={s.voice}><View style={s.micRing}><View style={s.mic}><Ionicons name="mic-outline" size={34} color={C.green}/></View></View><View style={s.voiceCopy}><View style={s.voiceMeta}><Text style={s.voiceKicker}>VOICE COMMAND</Text><View style={s.liveDot}/><Text style={s.live}>Listening</Text></View><Text style={s.voiceTitle}>Say “Hey Tauranto”</Text><Text style={s.voiceSub}>Tap to speak—or use the wake phrase.</Text></View><View style={s.waves}>{[7,12,18,10,15,21,12,17,8].map((h,i)=><View key={i} style={[s.wave,{height:h}]}/>)}</View></Pressable>
+   <View style={s.stats}><Stat icon="checkmark-circle-outline" orange value={pending||3} label="Need approval" action="Review now" onPress={onOpenActivity}/><Stat icon="document-text-outline" value={completed||48} label="Completed today" action="View activity" onPress={onOpenActivity}/></View>
+   <View style={s.section}><View><Text style={s.latest}>LATEST</Text><Text style={s.sectionTitle}>Recent commands</Text></View><Pressable onPress={onOpenActivity}><Text style={s.viewAll}>View all</Text></Pressable></View>
+   <View style={s.activity}>{(recent.length?recent:[{id:"1",title:"86 the truffle pasta",summary:"Waiting for your approval",createdAt:new Date().toISOString()},{id:"2",title:"Seafood delivery moved to 9 AM",summary:"Completed successfully",createdAt:new Date().toISOString()},{id:"3",title:"Closing team notified",summary:"Sent to 4 team members",createdAt:new Date().toISOString()}] as any[]).map((x:any,i:number)=><Pressable key={x.id||i} onPress={onOpenActivity} style={[s.row,i>0&&s.rowLine]}><View style={[s.activityIcon,i===0?s.orange:i===1?s.green:s.purple]}><Ionicons name={i===0?"restaurant-outline":i===1?"checkmark-circle-outline":"people-outline"} size={23} color={i===0?"#D87A12":i===1?"#00A96F":"#765CCE"}/></View><View style={{flex:1}}><Text numberOfLines={1} style={s.rowTitle}>{x.title||x.transcript}</Text><Text numberOfLines={1} style={s.rowSub}>{x.summary}</Text></View><Text style={s.time}>{new Date(x.createdAt).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</Text></Pressable>)}</View>
+  </ScrollView>
+ </View>
 }
-
-function Pill({icon,text}:{icon:keyof typeof Ionicons.glyphMap;text:string}){return <View style={s.pill}><Ionicons name={icon} size={17} color={C.green}/><Text style={s.pillText}>{text}</Text></View>}
+function Stat({icon,orange,value,label,action,onPress}:any){return <Pressable onPress={onPress} style={s.stat}><View style={[s.statIcon,orange?s.orange:s.green]}><Ionicons name={icon} size={27} color={orange?"#DF8115":"#00A96F"}/></View><Text style={s.statValue}>{value}</Text><Text style={s.statLabel}>{label}</Text><View style={s.statAction}><Text style={s.statActionText}>{action}</Text><Ionicons name="chevron-forward" size={16} color="#303832"/></View></Pressable>}
 
 const s=StyleSheet.create({
- page:{flex:1,backgroundColor:C.paper},
- content:{paddingHorizontal:20,paddingBottom:125},
- greeting:{minHeight:88,paddingVertical:13,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
- hello:{fontFamily:"NunitoSans_900Black",fontSize:26,lineHeight:31,color:C.ink,letterSpacing:-1},
- sub:{fontFamily:"NunitoSans_600SemiBold",fontSize:14,color:C.muted,marginTop:4},
- bell:{width:52,height:52,borderRadius:15,backgroundColor:C.card,alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:C.line},
- badge:{position:"absolute",right:-4,top:-7,minWidth:23,height:23,borderRadius:12,backgroundColor:C.orange,alignItems:"center",justifyContent:"center",paddingHorizontal:5},
- badgeText:{fontFamily:"NunitoSans_900Black",fontSize:11,color:"#fff"},
- hero:{height:300,marginTop:6,borderRadius:22,overflow:"hidden",justifyContent:"flex-end"},
- heroImage:{borderRadius:22},
- heroShade:{...StyleSheet.absoluteFillObject,backgroundColor:"rgba(10,18,15,.55)"},
- heroContent:{padding:26,paddingBottom:25},
- heroKicker:{fontFamily:"NunitoSans_900Black",fontSize:10,letterSpacing:1.8,color:"#F4CDB7",marginBottom:10},
- heroTitle:{fontFamily:"NunitoSans_900Black",fontSize:38,lineHeight:40,color:"#fff",letterSpacing:-1.6},
- heroCopy:{fontFamily:"NunitoSans_700Bold",fontSize:16,lineHeight:22,color:"rgba(255,255,255,.9)",maxWidth:470,marginTop:12},
- heroButton:{marginTop:20,height:48,alignSelf:"flex-start",borderRadius:14,borderWidth:1,borderColor:"rgba(255,255,255,.7)",paddingHorizontal:18,flexDirection:"row",alignItems:"center",gap:12,backgroundColor:"rgba(0,0,0,.18)"},
- heroButtonText:{fontFamily:"NunitoSans_900Black",fontSize:14,color:"#fff"},
- voiceCard:{minHeight:176,borderRadius:26,backgroundColor:"#117A62",borderWidth:0,marginTop:18,padding:22,shadowColor:"#0B5B49",shadowOpacity:.18,shadowRadius:20,shadowOffset:{width:0,height:10},elevation:5},
- voiceTop:{flexDirection:"row",alignItems:"center",gap:16},
- mic:{width:70,height:70,borderRadius:35,backgroundColor:"#FFFFFF",alignItems:"center",justifyContent:"center",borderWidth:7,borderColor:"rgba(255,255,255,.2)"},
- kicker:{fontFamily:"NunitoSans_900Black",fontSize:10,letterSpacing:1.8,color:"#C9F9E8"},
- voiceTitle:{fontFamily:"NunitoSans_900Black",fontSize:31,lineHeight:36,color:"#FFFFFF",letterSpacing:-1.2,marginTop:3},
- voiceSub:{fontFamily:"NunitoSans_700Bold",fontSize:15,lineHeight:20,color:"#D4EEE6",marginTop:15},
- voicePills:{flexDirection:"row",gap:8,marginTop:15,flexWrap:"wrap"},
- pill:{height:40,borderRadius:20,borderWidth:1,borderColor:"rgba(255,255,255,.28)",backgroundColor:"rgba(255,255,255,.1)",paddingHorizontal:13,flexDirection:"row",alignItems:"center",gap:7},
- pillText:{fontFamily:"NunitoSans_900Black",fontSize:12,color:"#FFFFFF"},
- sectionHead:{marginTop:30,marginBottom:13,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
- sectionTitle:{fontFamily:"NunitoSans_900Black",fontSize:30,lineHeight:35,color:C.ink,letterSpacing:-1.1},
- link:{fontFamily:"NunitoSans_900Black",fontSize:13,color:C.green},
- statCard:{minHeight:128,borderRadius:24,borderWidth:1,borderColor:C.line,backgroundColor:C.card,marginBottom:14,paddingHorizontal:22,paddingVertical:20,flexDirection:"row",alignItems:"center",justifyContent:"space-between",shadowColor:"#18231E",shadowOpacity:.05,shadowRadius:15,shadowOffset:{width:0,height:6},elevation:2},
- statLabel:{fontFamily:"NunitoSans_700Bold",fontSize:16,color:C.ink},
- statValue:{fontFamily:"NunitoSans_900Black",fontSize:42,lineHeight:48,color:C.ink,letterSpacing:-1.5,marginTop:5},
- statValueSmall:{fontFamily:"NunitoSans_900Black",fontSize:31,lineHeight:38,color:C.ink,letterSpacing:-1,marginTop:5},
- statusPill:{paddingHorizontal:15,height:38,borderRadius:19,backgroundColor:"#E7EFE5",alignItems:"center",justifyContent:"center"},
- statusPillHot:{backgroundColor:"#F5D7C5"},
- statusText:{fontFamily:"NunitoSans_900Black",fontSize:12,color:C.green},
- statusTextHot:{color:"#9B4F2D"},
- roundArrow:{width:48,height:48,borderRadius:24,backgroundColor:"#EAF0E7",alignItems:"center",justifyContent:"center"}
+ page:{flex:1,backgroundColor:"#fff"},content:{backgroundColor:"#fff"},top:{position:"absolute",zIndex:5,left:0,right:0,paddingHorizontal:16,paddingBottom:10,backgroundColor:"#fff",borderBottomWidth:1,borderBottomColor:C.line,flexDirection:"row",alignItems:"flex-end",justifyContent:"space-between"},topLeft:{flexDirection:"row",alignItems:"center",gap:9,flex:1},circle:{width:45,height:45,borderRadius:23,borderWidth:1,borderColor:"#DCE5E0",backgroundColor:"#fff",alignItems:"center",justifyContent:"center"},restaurant:{fontFamily:"NunitoSans_800ExtraBold",fontSize:11,color:C.deep,maxWidth:145},
+ hero:{height:228,borderRadius:27,overflow:"hidden",padding:24,justifyContent:"flex-end"},heroImage:{borderRadius:27},shade:{...StyleSheet.absoluteFillObject,backgroundColor:"rgba(9,16,13,.38)"},heroIcon:{position:"absolute",right:19,top:20,width:47,height:47,borderRadius:15,borderWidth:1,borderColor:"rgba(255,255,255,.35)",backgroundColor:"rgba(255,255,255,.18)",alignItems:"center",justifyContent:"center"},tag:{position:"absolute",left:24,top:25,color:"#fff",fontFamily:"NunitoSans_800ExtraBold",fontSize:12,paddingHorizontal:13,paddingVertical:8,borderRadius:20,borderWidth:1,borderColor:"rgba(255,255,255,.35)",backgroundColor:"rgba(255,255,255,.17)",overflow:"hidden"},heroTitle:{fontFamily:"NunitoSans_900Black",fontSize:32,lineHeight:34,color:"#fff",letterSpacing:-1.2,maxWidth:"82%"},heroCopy:{fontFamily:"NunitoSans_600SemiBold",fontSize:14,lineHeight:19,color:"#fff",marginTop:6,maxWidth:"85%"},swipe:{position:"absolute",right:18,bottom:14,fontFamily:"NunitoSans_700Bold",fontSize:8,color:"rgba(255,255,255,.82)"},dots:{height:40,flexDirection:"row",justifyContent:"center",alignItems:"center",gap:7},dot:{width:8,height:8,borderRadius:5,backgroundColor:"#DFE4E7"},dotOn:{width:30,backgroundColor:C.green},
+ greeting:{paddingHorizontal:18,marginTop:2,marginBottom:16,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},hello:{fontFamily:"NunitoSans_900Black",fontSize:27,color:C.ink,letterSpacing:-1},track:{height:37,borderRadius:19,paddingHorizontal:14,backgroundColor:"#EEFCF6",flexDirection:"row",alignItems:"center",gap:7},trackText:{fontFamily:"NunitoSans_900Black",fontSize:11,color:C.deep},trackDot:{width:8,height:8,borderRadius:4,backgroundColor:C.green},
+ voice:{marginHorizontal:16,minHeight:148,borderRadius:27,padding:18,backgroundColor:"#367F6D",flexDirection:"row",alignItems:"center",overflow:"hidden",shadowColor:"#195B4C",shadowOpacity:.17,shadowRadius:18,shadowOffset:{width:0,height:8},elevation:5},micRing:{width:85,height:85,borderRadius:43,borderWidth:1,borderColor:"rgba(70,229,171,.35)",alignItems:"center",justifyContent:"center"},mic:{width:70,height:70,borderRadius:35,backgroundColor:"#fff",alignItems:"center",justifyContent:"center"},voiceCopy:{marginLeft:14,flex:1},voiceMeta:{flexDirection:"row",alignItems:"center"},voiceKicker:{fontFamily:"NunitoSans_900Black",fontSize:9,letterSpacing:1.4,color:"#D9ECE5"},liveDot:{marginLeft:"auto",width:8,height:8,borderRadius:4,backgroundColor:"#34D699"},live:{fontFamily:"NunitoSans_800ExtraBold",fontSize:9,color:"#fff",marginLeft:6},voiceTitle:{fontFamily:"NunitoSans_900Black",fontSize:23,lineHeight:28,color:"#fff",letterSpacing:-.7,marginTop:12},voiceSub:{fontFamily:"NunitoSans_600SemiBold",fontSize:10,color:"#C8D8D2",marginTop:6},waves:{position:"absolute",right:17,bottom:18,flexDirection:"row",alignItems:"center",gap:3},wave:{width:3,borderRadius:2,backgroundColor:"#4EE0AB"},
+ stats:{flexDirection:"row",gap:12,paddingHorizontal:16,marginTop:15},stat:{flex:1,minHeight:164,borderRadius:23,borderWidth:1.5,borderColor:C.line,backgroundColor:"#fff",padding:17,shadowColor:"#18231E",shadowOpacity:.055,shadowRadius:14,shadowOffset:{width:0,height:5},elevation:2},statIcon:{width:44,height:44,borderRadius:14,alignItems:"center",justifyContent:"center"},orange:{backgroundColor:"#FFF1DE"},green:{backgroundColor:"#E5FFF3"},purple:{backgroundColor:"#EEEAFE"},statValue:{fontFamily:"NunitoSans_900Black",fontSize:34,lineHeight:39,color:C.ink,marginTop:13},statLabel:{fontFamily:"NunitoSans_600SemiBold",fontSize:12,color:C.muted,marginTop:2},statAction:{marginTop:"auto",flexDirection:"row",alignItems:"center"},statActionText:{fontFamily:"NunitoSans_900Black",fontSize:11,color:"#303832"},
+ section:{marginTop:30,marginBottom:12,paddingHorizontal:17,flexDirection:"row",alignItems:"flex-end",justifyContent:"space-between"},latest:{fontFamily:"NunitoSans_900Black",fontSize:10,letterSpacing:2,color:C.green},sectionTitle:{fontFamily:"NunitoSans_900Black",fontSize:29,lineHeight:34,color:C.ink,letterSpacing:-1,marginTop:5},viewAll:{fontFamily:"NunitoSans_900Black",fontSize:12,color:C.deep},activity:{marginHorizontal:16,borderRadius:22,borderWidth:1.5,borderColor:C.line,overflow:"hidden",backgroundColor:"#fff"},row:{minHeight:75,padding:13,flexDirection:"row",alignItems:"center",gap:11},rowLine:{borderTopWidth:1,borderTopColor:"#ECEEEF"},activityIcon:{width:44,height:44,borderRadius:14,alignItems:"center",justifyContent:"center"},rowTitle:{fontFamily:"NunitoSans_800ExtraBold",fontSize:12,color:C.ink},rowSub:{fontFamily:"NunitoSans_600SemiBold",fontSize:10,color:"#858C91",marginTop:4},time:{fontFamily:"NunitoSans_700Bold",fontSize:10,color:"#949A9D",marginLeft:5}
 });
