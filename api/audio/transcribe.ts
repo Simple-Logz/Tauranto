@@ -2,6 +2,7 @@ import type {VercelRequest,VercelResponse} from "@vercel/node";
 import OpenAI,{toFile} from "openai";
 import {z} from "zod";
 import {fail,requireUser} from "../../server/http";
+import {withinRateLimit} from "../../server/ratelimit";
 
 const bodySchema=z.object({
   audioBase64:z.string().min(100).max(12_000_000),
@@ -12,7 +13,13 @@ const extension:Record<string,string>={"audio/m4a":"m4a","audio/mp4":"m4a","audi
 export default async function handler(req:VercelRequest,res:VercelResponse){
  if(req.method!=="POST")return res.status(405).json({error:"METHOD_NOT_ALLOWED"});
  try{
-  await requireUser(req);
+  const user=await requireUser(req);
+  // 20 recordings per 10 minutes per user: generous for real use (a busy
+  // shift is nowhere near this), but bounds how much OpenAI transcription
+  // cost one compromised or misbehaving session can run up.
+  if(!(await withinRateLimit(`transcribe:${user.id}`,20,600))){
+   return res.status(429).json({error:"Too many voice commands in a short time. Please wait a few minutes and try again."});
+  }
   const body=bodySchema.parse(req.body);
   const bytes=Buffer.from(body.audioBase64,"base64");
   if(bytes.length>8_000_000)throw new Error("AUDIO_TOO_LARGE");

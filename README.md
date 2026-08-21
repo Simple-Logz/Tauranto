@@ -43,11 +43,15 @@ values ('RESTAURANT_UUID','AUTH_USER_UUID','owner',true);
 
 Add any number of managers to `restaurant_members`; set `can_approve=true` for required approvers.
 
+All migration files under `supabase/migrations/` should be run in order (001 through the latest) — each one is idempotent (`create table if not exists`, etc.) so re-running an already-applied migration is safe.
+
 ## 2. Environment
 
 Copy `.env.example` to `.env.local`. In Vercel, add the same values under Project Settings → Environment Variables. Only `EXPO_PUBLIC_*` values may enter the mobile bundle. The Supabase anon key is intentionally public and protected by RLS; the service-role key is private.
 
 `CREDENTIALS_ENCRYPTION_KEY` and `OAUTH_STATE_SECRET` are required and must each be their own random value (`openssl rand -base64 32`) — do not reuse the Supabase service-role key for these. They are used to encrypt stored OAuth credentials and to sign OAuth state respectively; the app throws on startup use of either feature if they are unset.
+
+`SENTRY_DSN` is optional — leave it blank to run without error monitoring. Set it to a project DSN from sentry.io to have unexpected server errors reported there instead of only sitting in Vercel's function logs.
 
 Never paste keys into chat, commit `.env.local`, embed private keys in Expo, or expose the Supabase service-role key.
 

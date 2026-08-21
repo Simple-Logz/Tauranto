@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient, type User } from "@supabase/supabase-js";
+import { captureError } from "./monitoring";
 
 export const admin = () => {
   const url=process.env.SUPABASE_URL||process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -35,5 +36,8 @@ export function fail(res: VercelResponse, error: unknown) {
   const message = errorMessage(error);
   console.error("Tauranto API failure", error);
   const status = message === "UNAUTHORIZED" ? 401 : message === "FORBIDDEN" ? 403 : 400;
+  // Only unexpected server-side failures go to monitoring — 401/403 are
+  // normal auth/permission outcomes, not incidents worth paging anyone over.
+  if (status >= 500 || status === 400) captureError(error, { path: res.req?.url, status });
   return res.status(status).json({ error: message });
 }
