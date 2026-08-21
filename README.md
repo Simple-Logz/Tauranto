@@ -32,7 +32,7 @@ Tauranto is a mobile-first restaurant operations assistant. It captures a spoken
 
 ## 1. Supabase
 
-Run `supabase/migrations/001_enterprise_core.sql` in the SQL editor. Enable email magic-link authentication. Create your first auth user, then bootstrap it (replace UUIDs):
+Run `supabase/migrations/001_enterprise_core.sql` in the SQL editor. The client currently signs users up and in with email + password (`src/screens/AuthScreen.tsx`), not magic links — enable email/password auth in Supabase Auth settings. (Password auth with no MFA is a lighter security posture than magic-link; revisit this before onboarding paying customers if that's not the intended long-term model.) Create your first auth user, then bootstrap it (replace UUIDs):
 
 ```sql
 insert into public.profiles(id,full_name,email) values ('AUTH_USER_UUID','Owner','owner@example.com');
@@ -46,6 +46,8 @@ Add any number of managers to `restaurant_members`; set `can_approve=true` for r
 ## 2. Environment
 
 Copy `.env.example` to `.env.local`. In Vercel, add the same values under Project Settings → Environment Variables. Only `EXPO_PUBLIC_*` values may enter the mobile bundle. The Supabase anon key is intentionally public and protected by RLS; the service-role key is private.
+
+`CREDENTIALS_ENCRYPTION_KEY` and `OAUTH_STATE_SECRET` are required and must each be their own random value (`openssl rand -base64 32`) — do not reuse the Supabase service-role key for these. They are used to encrypt stored OAuth credentials and to sign OAuth state respectively; the app throws on startup use of either feature if they are unset.
 
 Never paste keys into chat, commit `.env.local`, embed private keys in Expo, or expose the Supabase service-role key.
 
