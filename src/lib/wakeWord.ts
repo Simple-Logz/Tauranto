@@ -4,15 +4,24 @@ import{ExpoSpeechRecognitionModule,useSpeechRecognitionEvent}from"expo-speech-re
 // Tolerate common mis-hears of "Tauranto" from on-device speech recognizers
 // (which have never seen the brand name) — "hey tauranto" is the target
 // phrase, the rest are safety nets so standby doesn't stay silent forever.
-const PHRASES=["hey tauranto","tauranto","hey toronto","hey tarantino","hey toranto"];
+const PHRASES=["hey tauranto","tauranto","hey toronto","hey tarantino","hey toranto","hey turanto","hey tauranno","hey tirano"];
 
-// How long to keep the SAME recognition session open after the wake phrase,
-// waiting for the instruction that follows it, before giving up and telling
-// the caller nothing was heard.
-const WAKE_GRACE_MS=4200;
+// How long to keep listening after the wake phrase, waiting for the
+// instruction that follows it, before giving up and reporting nothing heard.
+const WAKE_GRACE_MS=4500;
 // Once the user has started speaking the instruction, how long a pause has
 // to last before we treat the instruction as finished and hand it off.
 const SPEECH_GAP_MS=1500;
+// Absolute ceiling on one capture attempt, regardless of how many times the
+// OS restarts the recognizer underneath us — a safety net so a run of
+// recognizer hiccups can't hold the microphone open forever.
+const MAX_CAPTURE_MS=14000;
+// Mobile recognizers routinely end a "continuous" session after a couple of
+// seconds of silence — this is normal, not a failure. When that happens
+// mid-capture we restart immediately and keep accumulating into the SAME
+// capture rather than treating the restart as "nothing was said."
+const RESTART_DURING_CAPTURE_MS=60;
+const RESTART_DURING_WAKE_MS=350;
 
 function findWake(transcript:string):{end:number}|null{
  const t=transcript.toLowerCase();
@@ -26,27 +35,25 @@ function findWake(transcript:string):{end:number}|null{
  *
  * This uses `expo-speech-recognition` — the OS's built-in speech recognizer
  * (on-device where the platform supports it), already an installed
- * dependency and already declared in app.json's permission strings. No
- * separate wake-word vendor account or API key is required. It is not a
- * dedicated low-power wake chip (that would need native hardware access
- * this app doesn't have), but it is a real, continuous "listen for the
- * phrase" loop rather than the placeholder standby copy that used to say
- * a wake-word service was "being initialized" and never actually listened.
+ * dependency and already declared in app.json's permission strings. It is
+ * not a dedicated low-power wake chip, and it is not a purpose-built
+ * wake-word engine (something like Picovoice would give materially better
+ * "did it even hear me" reliability, at the cost of a new vendor account
+ * and a trained wake-word model — worth doing if accuracy is still not
+ * good enough after this).
  *
- * Previously, hearing the wake phrase would abort this recognizer and hand
- * off to a brand-new, separate fixed-window recording — which threw away
- * anything said in the same breath as "Hey Tauranto" and left a real gap
- * where the microphone was being re-acquired. This version keeps the SAME
- * continuous recognition session running straight through the instruction:
- * it strips the wake phrase out of the transcript and keeps accumulating
- * whatever follows until the user pauses, then hands the caller the
- * captured text directly. Only if nothing at all was heard within a short
- * grace period does it report an empty capture, so the caller can fall
- * back to the manual tap-to-speak flow.
- *
- * Mobile speech recognizers stop after a few seconds of silence even in
- * `continuous` mode, so this restarts itself on every `end`/recoverable
- * `error` event for as long as `active` stays true.
+ * What this version fixes: mobile recognizers end a "continuous" session
+ * after a couple of seconds of silence even mid-sentence — that is normal
+ * platform behavior, not a dropped call. The previous version treated every
+ * session end as "the user is done talking," which reset back to
+ * wake-listening and silently swallowed whatever the user said next if it
+ * arrived after the OS's own session boundary (extremely easy to trigger:
+ * say "Hey Tauranto", pause half a second to see it react, then speak the
+ * command — exactly how people naturally use a wake word). Now, ending a
+ * session while we're mid-capture just restarts the recognizer as fast as
+ * possible WITHOUT resetting phase or losing what was already heard; only
+ * our own silence timer — which tracks real speech, not native session
+ * boundaries — decides when the instruction is finished.
  */
 export function useWakeWord(active:boolean,onCommand:(text:string)=>void){
  const[supported,setSupported]=useState(true);
@@ -54,14 +61,26 @@ export function useWakeWord(active:boolean,onCommand:(text:string)=>void){
  const[awake,setAwake]=useState(false);
  const restartTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const silenceTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+ const captureCapTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const phaseRef=useRef<"wake"|"capture">("wake");
- const capturedRef=useRef("");
+ // committedText: everything captured from native sessions that have
+ // already ended during this capture attempt. sessionText: what the
+ // CURRENTLY-RUNNING native session has transcribed so far. The two are
+ // joined for the text handed back, so a mid-instruction session restart
+ // doesn't erase what came before it.
+ const committedRef=useRef("");
+ const sessionRef=useRef("");
  const onCommandRef=useRef(onCommand);
  onCommandRef.current=onCommand;
 
  useEffect(()=>{try{setSupported(ExpoSpeechRecognitionModule.isRecognitionAvailable())}catch{setSupported(false)}},[]);
 
- const resetPhase=()=>{phaseRef.current="wake";capturedRef.current="";setAwake(false)};
+ const clearTimers=()=>{
+  if(restartTimer.current){clearTimeout(restartTimer.current);restartTimer.current=null}
+  if(silenceTimer.current){clearTimeout(silenceTimer.current);silenceTimer.current=null}
+  if(captureCapTimer.current){clearTimeout(captureCapTimer.current);captureCapTimer.current=null}
+ };
+ const resetPhase=()=>{phaseRef.current="wake";committedRef.current="";sessionRef.current="";setAwake(false)};
 
  const start=async()=>{
   try{
@@ -75,8 +94,7 @@ export function useWakeWord(active:boolean,onCommand:(text:string)=>void){
   }catch{setSupported(false);setListening(false)}
  };
  const stop=()=>{
-  if(restartTimer.current){clearTimeout(restartTimer.current);restartTimer.current=null}
-  if(silenceTimer.current){clearTimeout(silenceTimer.current);silenceTimer.current=null}
+  clearTimers();
   try{ExpoSpeechRecognitionModule.abort()}catch{}
   setListening(false);resetPhase();
  };
@@ -86,15 +104,21 @@ export function useWakeWord(active:boolean,onCommand:(text:string)=>void){
   return()=>stop();
  },[active,supported]);
 
+ const capturedText=()=>[committedRef.current,sessionRef.current].filter(Boolean).join(" ").trim();
  const finalizeCommand=()=>{
-  if(silenceTimer.current){clearTimeout(silenceTimer.current);silenceTimer.current=null}
-  const text=capturedRef.current.trim();
+  clearTimers();
+  const text=capturedText();
   resetPhase();
   onCommandRef.current(text);
  };
  const armSilenceTimer=()=>{
   if(silenceTimer.current)clearTimeout(silenceTimer.current);
-  silenceTimer.current=setTimeout(finalizeCommand,capturedRef.current?SPEECH_GAP_MS:WAKE_GRACE_MS);
+  silenceTimer.current=setTimeout(finalizeCommand,capturedText()?SPEECH_GAP_MS:WAKE_GRACE_MS);
+ };
+ const beginCapture=()=>{
+  phaseRef.current="capture";committedRef.current="";sessionRef.current="";setAwake(true);
+  if(captureCapTimer.current)clearTimeout(captureCapTimer.current);
+  captureCapTimer.current=setTimeout(finalizeCommand,MAX_CAPTURE_MS);
  };
 
  useSpeechRecognitionEvent("result",e=>{
@@ -103,31 +127,37 @@ export function useWakeWord(active:boolean,onCommand:(text:string)=>void){
   if(phaseRef.current==="wake"){
    const match=findWake(said);
    if(!match)return;
-   phaseRef.current="capture";setAwake(true);
+   beginCapture();
    const remainder=said.slice(match.end).trim();
-   if(remainder)capturedRef.current=remainder;
+   if(remainder)sessionRef.current=remainder;
    armSilenceTimer();
    return;
   }
-  // Already past the wake phrase: continuous recognition reports the
-  // growing transcript for the current speech segment, which may or may not
-  // still include the wake phrase as a prefix depending on platform — strip
-  // it if present, otherwise treat the whole segment as the instruction.
+  // Already past the wake phrase: this native session's transcript may or
+  // may not still carry the wake phrase as a prefix depending on platform —
+  // strip it if present, otherwise the whole segment is instruction text.
   const again=findWake(said);
-  const text=(again?said.slice(again.end):said).trim();
-  if(text)capturedRef.current=text;
+  sessionRef.current=(again?said.slice(again.end):said).trim();
   armSilenceTimer();
  });
  useSpeechRecognitionEvent("end",()=>{
   setListening(false);
-  if(phaseRef.current==="capture"){finalizeCommand()}
-  if(active&&supported)restartTimer.current=setTimeout(()=>void start(),350);
+  if(phaseRef.current==="capture"){
+   // Commit what this session captured and restart fast — this is a
+   // platform session boundary, not the user finishing their sentence.
+   // Whether the instruction is actually complete is decided solely by
+   // armSilenceTimer/finalizeCommand above.
+   const joined=capturedText();
+   committedRef.current=joined;sessionRef.current="";
+   if(active&&supported)restartTimer.current=setTimeout(()=>void start(),RESTART_DURING_CAPTURE_MS);
+   return;
+  }
+  if(active&&supported)restartTimer.current=setTimeout(()=>void start(),RESTART_DURING_WAKE_MS);
  });
  useSpeechRecognitionEvent("error",e=>{
   setListening(false);
   if(e.error==="not-allowed"||e.error==="service-not-allowed"){setSupported(false);return}
-  if(phaseRef.current==="capture")finalizeCommand();
-  if(active&&supported)restartTimer.current=setTimeout(()=>void start(),700);
+  if(active&&supported)restartTimer.current=setTimeout(()=>void start(),phaseRef.current==="capture"?RESTART_DURING_CAPTURE_MS:700);
  });
 
  return{supported,listening,awake};
