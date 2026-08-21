@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImpactPlan, requiredApprovals, validateProposal } from "./operations";
+import { buildImpactPlan, exceedsRoleCeiling, extractAmount, requiredApprovals, roleRiskCeiling, spendLimitFor, validateProposal } from "./operations";
 
 function baseProposal(overrides: Partial<Record<string, any>> = {}) {
   return {
@@ -116,5 +116,36 @@ describe("requiredApprovals", () => {
   it("requires 1 approval for low risk by default, and 0 only when the policy opts in to auto-execute", () => {
     expect(requiredApprovals("low", {})).toBe(1);
     expect(requiredApprovals("low", { auto_execute_low_risk: true })).toBe(0);
+  });
+});
+
+describe("role governance", () => {
+  it("falls back to the default risk ceiling per role when a restaurant has no policy configured", () => {
+    expect(roleRiskCeiling("server", {})).toBe("low");
+    expect(roleRiskCeiling("manager", {})).toBe("high");
+    expect(roleRiskCeiling("owner", {})).toBe("critical");
+  });
+
+  it("lets a restaurant override a role's risk ceiling via operation_policies.role_max_risk", () => {
+    expect(roleRiskCeiling("server", { role_max_risk: { server: "high" } })).toBe("high");
+  });
+
+  it("flags a proposal that exceeds the requesting role's risk ceiling", () => {
+    expect(exceedsRoleCeiling("high", "server", {})).toBe(true);
+    expect(exceedsRoleCeiling("low", "server", {})).toBe(false);
+    expect(exceedsRoleCeiling("critical", "manager", {})).toBe(true);
+    expect(exceedsRoleCeiling("critical", "owner", {})).toBe(false);
+  });
+
+  it("returns null (no limit) when a role has no configured spend limit", () => {
+    expect(spendLimitFor("manager", {})).toBeNull();
+    expect(spendLimitFor("manager", { role_spend_limits: { manager: 500 } })).toBe(500);
+  });
+
+  it("extracts a numeric amount from proposal parameters, tolerating currency formatting", () => {
+    expect(extractAmount({ amount: 1240 })).toBe(1240);
+    expect(extractAmount({ estimated_cost: "$1,240.50" })).toBe(1240.5);
+    expect(extractAmount({ item: "Salmon" })).toBeNull();
+    expect(extractAmount({ amount: "0" })).toBeNull();
   });
 });
