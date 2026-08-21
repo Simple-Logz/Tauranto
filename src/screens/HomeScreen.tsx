@@ -1,5 +1,6 @@
 import React,{useEffect,useMemo,useState}from"react";
-import{Alert,Image,Modal,Pressable,ScrollView,StyleSheet,Switch,Text,View}from"react-native";
+import{Image,Modal,Pressable,ScrollView,StyleSheet,Switch,Text,View}from"react-native";
+import{appAlert}from"../components/AppAlert";
 import{LinearGradient}from"expo-linear-gradient";
 import{Ionicons}from"@expo/vector-icons";
 import{useSafeAreaInsets}from"react-native-safe-area-context";
@@ -25,7 +26,7 @@ export function HomeScreen({restaurantId,commands,onOpenApprovals,onOpenActivity
  useEffect(()=>{taurantoApi.listIntegrations(restaurantId).then(x=>setConnectedCount((x.integrations||[]).filter((i:any)=>i.status==="connected").length)).catch(()=>{})},[restaurantId]);
  useEffect(()=>{if(menuRequest>0)setDrawer(true)},[menuRequest]);
  const first=String(fullName||workspace?.profile?.full_name||"").trim().split(/\s+/)[0]||"there",restaurant=restaurantName||workspace?.restaurant?.name||"Your restaurant",avatar=workspace?.profile?.avatar_url||workspace?.restaurant?.logo_url||"";
- const toggleAppearance=async(next:boolean)=>{if(changingTheme)return;const preferences={...(workspace?.preferences||{}),appearance:next?"dark":"light"};setDark(next);setChangingTheme(true);try{await taurantoApi.updateWorkspace(restaurantId,{profile:workspace?.profile||{},restaurant:workspace?.restaurant||{},preferences});setWorkspace((x:any)=>({...x,preferences}))}catch(e){setDark(!next);Alert.alert("Appearance not saved",e instanceof Error?e.message:"Please try again.")}finally{setChangingTheme(false)}};
+ const toggleAppearance=async(next:boolean)=>{if(changingTheme)return;const preferences={...(workspace?.preferences||{}),appearance:next?"dark":"light"};setDark(next);setChangingTheme(true);try{await taurantoApi.updateWorkspace(restaurantId,{profile:workspace?.profile||{},restaurant:workspace?.restaurant||{},preferences});setWorkspace((x:any)=>({...x,preferences}))}catch(e){setDark(!next);appAlert("Appearance not saved",e instanceof Error?e.message:"Please try again.")}finally{setChangingTheme(false)}};
  const recent=useMemo(()=>commands.slice(0,3),[commands]);
  // A single real status line replaces the old three-slide marketing
  // carousel, which just restated "voice control is great" three different

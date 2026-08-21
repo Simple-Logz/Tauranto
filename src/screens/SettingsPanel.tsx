@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from "react";
-import {ActivityIndicator,Alert,Pressable,StyleSheet,Switch,Text,TextInput,View} from "react-native";
+import {ActivityIndicator,Pressable,StyleSheet,Switch,Text,TextInput,View} from "react-native";
+import {appAlert} from "../components/AppAlert";
 import {Ionicons} from "@expo/vector-icons";
 import {colors,darkColors} from "../theme/tokens";
 import {useTheme} from "../theme/ThemeContext";
@@ -51,7 +52,7 @@ function GovernanceSection({restaurantId}:{restaurantId:string}){
  const[saving,setSaving]=useState(false);
  const load=async()=>{setLoading(true);try{const r=await taurantoApi.getPolicy(restaurantId);const p=r.policy;setPolicy(p?{auto_execute_low_risk:!!p.auto_execute_low_risk,medium_approvals:Number(p.medium_approvals??1),high_approvals:Number(p.high_approvals??1),critical_approvals:Number(p.critical_approvals??2),allowed_intents:p.allowed_intents?.length?p.allowed_intents:[...ACTION_INTENTS],role_max_risk:{...DEFAULT_ROLE_MAX_RISK,...(p.role_max_risk||{})},role_spend_limits:p.role_spend_limits||{}}:defaultPolicy())}catch{setPolicy(defaultPolicy())}finally{setLoading(false)}};
  useEffect(()=>{void load()},[restaurantId]);
- const save=async()=>{if(!policy)return;setSaving(true);try{await taurantoApi.updatePolicy(restaurantId,{autoExecuteLowRisk:policy.auto_execute_low_risk,mediumApprovals:policy.medium_approvals,highApprovals:policy.high_approvals,criticalApprovals:policy.critical_approvals,allowedIntents:policy.allowed_intents,roleMaxRisk:policy.role_max_risk,roleSpendLimits:policy.role_spend_limits});Alert.alert("Governance saved","These rules now apply to every voice and typed command.")}catch(e){Alert.alert("Could not save",e instanceof Error?e.message:"Please retry.")}finally{setSaving(false)}};
+ const save=async()=>{if(!policy)return;setSaving(true);try{await taurantoApi.updatePolicy(restaurantId,{autoExecuteLowRisk:policy.auto_execute_low_risk,mediumApprovals:policy.medium_approvals,highApprovals:policy.high_approvals,criticalApprovals:policy.critical_approvals,allowedIntents:policy.allowed_intents,roleMaxRisk:policy.role_max_risk,roleSpendLimits:policy.role_spend_limits});appAlert("Governance saved","These rules now apply to every voice and typed command.")}catch(e){appAlert("Could not save",e instanceof Error?e.message:"Please retry.")}finally{setSaving(false)}};
  if(loading||!policy)return <View style={{marginBottom:20}}><SkeletonCard lines={3}/></View>;
  const setRoleRisk=(role:MemberRole,risk:RiskLevel)=>setPolicy(p=>p&&({...p,role_max_risk:{...p.role_max_risk,[role]:risk}}));
  const setRoleLimit=(role:MemberRole,text:string)=>setPolicy(p=>p&&({...p,role_spend_limits:{...p.role_spend_limits,[role]:text.trim()===""?null:Math.max(0,Number(text)||0)}}));

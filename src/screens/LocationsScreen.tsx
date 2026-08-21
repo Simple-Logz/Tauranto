@@ -1,5 +1,6 @@
 import React,{useCallback,useEffect,useState}from'react';
-import{ActivityIndicator,Alert,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
+import{ActivityIndicator,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
+import{appAlert}from'../components/AppAlert';
 import{Ionicons}from'@expo/vector-icons';
 import{taurantoApi}from'../lib/api';
 import{colors,darkColors,type}from'../theme/tokens';
@@ -21,9 +22,9 @@ export function LocationsScreen({restaurantId,onSwitchLocation}:{restaurantId:st
  const loadFeed=useCallback(async()=>{setFeedLoading(true);try{const r=await taurantoApi.locationsFeed(restaurantId);setFeed(r.commands||[])}catch{ /* the location list above is the primary view; a feed failure shouldn't block it */ }finally{setFeedLoading(false)}},[restaurantId]);
  useEffect(()=>{void load();void loadFeed()},[load,loadFeed]);
 
- const switchTo=async(id:string)=>{if(id===restaurantId)return;setSwitching(id);try{await onSwitchLocation(id)}catch(e){Alert.alert('Could not switch locations',e instanceof Error?e.message:'Please retry.')}finally{setSwitching('')}};
- const addLocation=async()=>{if(!name.trim())return Alert.alert('Name required','Give the new location a name.');setBusy(true);try{await taurantoApi.addLocation(restaurantId,name.trim());setAddOpen(false);setName('');await load();Alert.alert('Location added',`${name.trim()} is now part of ${organization?.name||'your chain'}. Switch to it to connect its own POS, set its hours, and invite its team.`)}catch(e){Alert.alert('Could not add location',e instanceof Error?e.message:'Please retry.')}finally{setBusy(false)}};
- const decide=async(approvalId:string,approved:boolean)=>{try{await taurantoApi.decide(approvalId,approved?'approved':'rejected');await loadFeed()}catch(e){Alert.alert('Could not record decision',e instanceof Error?e.message:'Please retry.')}};
+ const switchTo=async(id:string)=>{if(id===restaurantId)return;setSwitching(id);try{await onSwitchLocation(id)}catch(e){appAlert('Could not switch locations',e instanceof Error?e.message:'Please retry.')}finally{setSwitching('')}};
+ const addLocation=async()=>{if(!name.trim())return appAlert('Name required','Give the new location a name.');setBusy(true);try{await taurantoApi.addLocation(restaurantId,name.trim());setAddOpen(false);setName('');await load();appAlert('Location added',`${name.trim()} is now part of ${organization?.name||'your chain'}. Switch to it to connect its own POS, set its hours, and invite its team.`)}catch(e){appAlert('Could not add location',e instanceof Error?e.message:'Please retry.')}finally{setBusy(false)}};
+ const decide=async(approvalId:string,approved:boolean)=>{try{await taurantoApi.decide(approvalId,approved?'approved':'rejected');await loadFeed()}catch(e){appAlert('Could not record decision',e instanceof Error?e.message:'Please retry.')}};
 
  if(loading)return <ScrollView style={[s.page,dark&&s.pageDark]} contentContainerStyle={{padding:20,paddingTop:24}}><SkeletonCard lines={2}/><SkeletonCard lines={2}/></ScrollView>;
  return <ScrollView style={[s.page,dark&&s.pageDark]} contentContainerStyle={{padding:20,paddingTop:24,paddingBottom:120}}>

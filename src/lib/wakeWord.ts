@@ -2,6 +2,18 @@ import{useEffect,useRef,useState}from"react";
 import{ExpoSpeechRecognitionModule,useSpeechRecognitionEvent}from"expo-speech-recognition";
 import{findWake}from"./wakeMatch";
 
+// Module-level, not per-hook: once the OS has granted microphone/speech
+// permission this session, every later call to start() — including the
+// silent restarts that happen every RESTART_DURING_CAPTURE_MS/
+// RESTART_DURING_WAKE_MS while the app is actively listening — skips
+// re-querying permission state entirely instead of asking the OS again on
+// every single restart tick. A user should be asked once, ever, not have
+// the app re-check dozens of times a minute while listening; if permission
+// is later actually revoked, ExpoSpeechRecognitionModule.start() itself
+// fails and the existing error handling below (which flips `supported` to
+// false on "not-allowed"/"service-not-allowed") already covers that case.
+let permissionGranted=false;
+
 // How long to keep listening after the wake phrase, waiting for the
 // instruction that follows it, before giving up and reporting nothing heard.
 const WAKE_GRACE_MS=4500;
@@ -76,10 +88,13 @@ export function useWakeWord(active:boolean,onCommand:(text:string)=>void){
 
  const start=async()=>{
   try{
-   const perm=await ExpoSpeechRecognitionModule.getPermissionsAsync();
-   if(!perm.granted){
-    const req=await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if(!req.granted){setSupported(false);return}
+   if(!permissionGranted){
+    const perm=await ExpoSpeechRecognitionModule.getPermissionsAsync();
+    if(!perm.granted){
+     const req=await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+     if(!req.granted){setSupported(false);return}
+    }
+    permissionGranted=true;
    }
    ExpoSpeechRecognitionModule.start({lang:"en-US",interimResults:true,continuous:true,contextualStrings:["Hey Tauranto","Tauranto"]});
    setListening(true);
@@ -148,7 +163,7 @@ export function useWakeWord(active:boolean,onCommand:(text:string)=>void){
  });
  useSpeechRecognitionEvent("error",e=>{
   setListening(false);
-  if(e.error==="not-allowed"||e.error==="service-not-allowed"){setSupported(false);return}
+  if(e.error==="not-allowed"||e.error==="service-not-allowed"){permissionGranted=false;setSupported(false);return}
   if(active&&supported)restartTimer.current=setTimeout(()=>void start(),phaseRef.current==="capture"?RESTART_DURING_CAPTURE_MS:700);
  });
 
