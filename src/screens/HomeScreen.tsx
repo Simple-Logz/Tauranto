@@ -6,7 +6,7 @@ import {VoiceCommand} from "../lib/models";
 
 type Props={commands:VoiceCommand[];onDecide:(id:string,approved:boolean)=>void;onOpenActivity:()=>void;onOpenVoice:()=>void};
 
-const C={ink:"#242421",paper:"#F6F3ED",card:"#FFFDF9",green:"#3E684B",orange:"#E98247",muted:"#6E6B66",line:"#DED8CF"};
+const C={ink:"#0B0F0D",paper:"#FFFFFF",card:"#FFFFFF",green:"#00B873",orange:"#E98247",muted:"#687079",line:"#DFE4E6"};
 const hero="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1400&q=90";
 
 export function HomeScreen({commands,onOpenActivity,onOpenVoice}:Props){
@@ -32,7 +32,7 @@ export function HomeScreen({commands,onOpenActivity,onOpenVoice}:Props){
 
    <Pressable onPress={onOpenVoice} style={s.voiceCard}>
      <View style={s.voiceTop}>
-       <View style={s.mic}><Ionicons name="mic" size={30} color="#fff"/></View>
+       <View style={s.mic}><Ionicons name="mic" size={30} color={C.green}/></View>
        <View style={{flex:1}}><Text style={s.kicker}>VOICE OPERATIONS</Text><Text style={s.voiceTitle}>Hey Tauranto</Text></View>
      </View>
      <Text style={s.voiceSub}>Tell Tauranto what needs to happen next.</Text>
@@ -71,19 +71,19 @@ const s=StyleSheet.create({
  heroCopy:{fontFamily:"NunitoSans_700Bold",fontSize:16,lineHeight:22,color:"rgba(255,255,255,.9)",maxWidth:470,marginTop:12},
  heroButton:{marginTop:20,height:48,alignSelf:"flex-start",borderRadius:14,borderWidth:1,borderColor:"rgba(255,255,255,.7)",paddingHorizontal:18,flexDirection:"row",alignItems:"center",gap:12,backgroundColor:"rgba(0,0,0,.18)"},
  heroButtonText:{fontFamily:"NunitoSans_900Black",fontSize:14,color:"#fff"},
- voiceCard:{minHeight:190,borderRadius:18,backgroundColor:C.card,borderWidth:1,borderColor:C.line,marginTop:18,padding:22},
+ voiceCard:{minHeight:176,borderRadius:26,backgroundColor:"#117A62",borderWidth:0,marginTop:18,padding:22,shadowColor:"#0B5B49",shadowOpacity:.18,shadowRadius:20,shadowOffset:{width:0,height:10},elevation:5},
  voiceTop:{flexDirection:"row",alignItems:"center",gap:16},
- mic:{width:70,height:70,borderRadius:20,backgroundColor:C.green,alignItems:"center",justifyContent:"center"},
- kicker:{fontFamily:"NunitoSans_900Black",fontSize:10,letterSpacing:1.8,color:C.orange},
- voiceTitle:{fontFamily:"NunitoSans_900Black",fontSize:31,lineHeight:36,color:C.green,letterSpacing:-1.2,marginTop:3},
- voiceSub:{fontFamily:"NunitoSans_700Bold",fontSize:15,lineHeight:20,color:C.muted,marginTop:15},
+ mic:{width:70,height:70,borderRadius:35,backgroundColor:"#FFFFFF",alignItems:"center",justifyContent:"center",borderWidth:7,borderColor:"rgba(255,255,255,.2)"},
+ kicker:{fontFamily:"NunitoSans_900Black",fontSize:10,letterSpacing:1.8,color:"#C9F9E8"},
+ voiceTitle:{fontFamily:"NunitoSans_900Black",fontSize:31,lineHeight:36,color:"#FFFFFF",letterSpacing:-1.2,marginTop:3},
+ voiceSub:{fontFamily:"NunitoSans_700Bold",fontSize:15,lineHeight:20,color:"#D4EEE6",marginTop:15},
  voicePills:{flexDirection:"row",gap:8,marginTop:15,flexWrap:"wrap"},
- pill:{height:40,borderRadius:12,borderWidth:1,borderColor:C.line,backgroundColor:"#FAF8F3",paddingHorizontal:13,flexDirection:"row",alignItems:"center",gap:7},
- pillText:{fontFamily:"NunitoSans_900Black",fontSize:12,color:C.ink},
+ pill:{height:40,borderRadius:20,borderWidth:1,borderColor:"rgba(255,255,255,.28)",backgroundColor:"rgba(255,255,255,.1)",paddingHorizontal:13,flexDirection:"row",alignItems:"center",gap:7},
+ pillText:{fontFamily:"NunitoSans_900Black",fontSize:12,color:"#FFFFFF"},
  sectionHead:{marginTop:30,marginBottom:13,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
  sectionTitle:{fontFamily:"NunitoSans_900Black",fontSize:30,lineHeight:35,color:C.ink,letterSpacing:-1.1},
  link:{fontFamily:"NunitoSans_900Black",fontSize:13,color:C.green},
- statCard:{minHeight:128,borderRadius:16,borderWidth:1,borderColor:C.line,backgroundColor:C.card,marginBottom:14,paddingHorizontal:22,paddingVertical:20,flexDirection:"row",alignItems:"center",justifyContent:"space-between"},
+ statCard:{minHeight:128,borderRadius:24,borderWidth:1,borderColor:C.line,backgroundColor:C.card,marginBottom:14,paddingHorizontal:22,paddingVertical:20,flexDirection:"row",alignItems:"center",justifyContent:"space-between",shadowColor:"#18231E",shadowOpacity:.05,shadowRadius:15,shadowOffset:{width:0,height:6},elevation:2},
  statLabel:{fontFamily:"NunitoSans_700Bold",fontSize:16,color:C.ink},
  statValue:{fontFamily:"NunitoSans_900Black",fontSize:42,lineHeight:48,color:C.ink,letterSpacing:-1.5,marginTop:5},
  statValueSmall:{fontFamily:"NunitoSans_900Black",fontSize:31,lineHeight:38,color:C.ink,letterSpacing:-1,marginTop:5},
