@@ -6,9 +6,9 @@ import{taurantoApi,supabase}from"../lib/api";
 import{colors}from"../theme/tokens";
 import{IntegrationsScreen}from"./IntegrationsScreen";
 
-export function ProfileHub({restaurantId,initialPage="profile"}:{restaurantId:string;initialPage?:"profile"|"integrations"}){const[page,setPage]=useState<"profile"|"integrations">(initialPage);if(page==="profile")return <ProfileScreen restaurantId={restaurantId} onOpenIntegrations={()=>setPage("integrations")}/>;return <View style={s.hub}><View style={s.hubTop}><Pressable accessibilityLabel="Back to profile" onPress={()=>setPage("profile")} style={s.hubBack}><Ionicons name="arrow-back" size={21} color={colors.ink}/></Pressable><Text style={s.hubTitle}>Integrations</Text></View><View style={{flex:1}}><IntegrationsScreen restaurantId={restaurantId}/></View></View>}
+export function ProfileHub({restaurantId,initialPage="profile"}:{restaurantId:string;initialPage?:"profile"|"integrations"}){const[page,setPage]=useState<"profile"|"integrations">(initialPage);if(page==="profile")return <ProfileScreen restaurantId={restaurantId}/>;return <View style={s.hub}><View style={s.hubTop}><Pressable accessibilityLabel="Back to profile" onPress={()=>setPage("profile")} style={s.hubBack}><Ionicons name="arrow-back" size={21} color={colors.ink}/></Pressable><Text style={s.hubTitle}>Integrations</Text></View><View style={{flex:1}}><IntegrationsScreen restaurantId={restaurantId}/></View></View>}
 
-export function ProfileScreen({restaurantId,onOpenIntegrations}:{restaurantId:string;onOpenIntegrations:()=>void}){
+export function ProfileScreen({restaurantId}:{restaurantId:string}){
  const inset=useSafeAreaInsets(),[ws,setWs]=useState<any>(null),[name,setName]=useState(""),[restaurant,setRestaurant]=useState(""),[avatar,setAvatar]=useState(""),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
  const load=async()=>{setLoading(true);try{const x=await taurantoApi.workspace(restaurantId);setWs(x);setName(x?.profile?.full_name||"");setRestaurant(x?.restaurant?.name||"");setAvatar(x?.profile?.avatar_url||x?.restaurant?.logo_url||"")}catch(e){Alert.alert("Profile unavailable",e instanceof Error?e.message:"Please retry.")}finally{setLoading(false)}};
  useEffect(()=>{void load()},[restaurantId]);
@@ -23,7 +23,6 @@ export function ProfileScreen({restaurantId,onOpenIntegrations}:{restaurantId:st
    <Text style={s.label}>Restaurant name</Text><TextInput value={restaurant} onChangeText={setRestaurant} placeholder="Restaurant name" placeholderTextColor="#929A95" style={s.input}/>
    <Pressable disabled={saving} onPress={save} style={({pressed})=>[s.save,pressed&&{opacity:.86},saving&&{opacity:.6}]}>{saving?<ActivityIndicator color="#fff"/>:<Text style={s.saveText}>Save profile</Text>}</Pressable>
   </View>
-  <Pressable onPress={onOpenIntegrations} style={s.integration}><View style={s.integrationIcon}><Ionicons name="git-network-outline" size={27} color={colors.leafDeep}/></View><View style={{flex:1}}><Text style={s.integrationTitle}>Integrations</Text><Text style={s.integrationCopy}>Connect Gmail, Calendar, Square, Slack and restaurant tools.</Text></View><Ionicons name="chevron-forward" size={21} color="#909A94"/></Pressable>
   <Pressable onPress={()=>supabase.auth.signOut()} style={s.logout}><Ionicons name="log-out-outline" size={20} color="#9B3F36"/><Text style={s.logoutText}>Log out</Text></Pressable>
  </ScrollView>
 }
