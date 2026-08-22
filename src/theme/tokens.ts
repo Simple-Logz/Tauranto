@@ -19,13 +19,32 @@ export const colors = {
   tomatoPale: "#FFF0E9",
   saffron: "#F2B84B",
   saffronPale: "#FFF4D8",
-  cream: "#FFFFFF",
-  warmWhite: "#FFFFFF",
+  // Page background is a warm off-white, one shade below the pure-white card
+  // surface (`paper`) — that faint contrast plus a thin border is what now
+  // defines a card, instead of a heavy drop shadow. Matches the flat,
+  // data-dense SaaS look (warm gray page, crisp white bordered cards) the
+  // account settled on as its visual reference, in place of the earlier
+  // deeper-shadow "floating card" treatment.
+  cream: "#FAF9F6",
+  warmWhite: "#FAF9F6",
   paper: "#FFFFFF",
-  line: "#E0E5E3",
+  line: "#E3E6E1",
   blue: "#5B7595",
   lavender: "#756889",
   black: "#101710",
+};
+
+// Semantic status palette — the one place every risk/state pill across the
+// app should draw its colors from, instead of each screen inventing its own
+// red/amber/green. Mirrors a standard risk-register convention (high/medium/
+// low + a neutral "in review" blue) rather than the ad hoc badge colors that
+// had drifted per screen.
+export const status = {
+  high: { bg: "#FBE4E1", fg: "#C0392B" },
+  medium: { bg: "#FDECC8", fg: "#B7791F" },
+  low: { bg: "#E3F5E7", fg: "#1E8A4C" },
+  info: { bg: "#E4EEFC", fg: "#2B5FCC" },
+  neutral: { bg: "#F1F1EE", fg: "#6F786F" },
 };
 
 // Shared type scale. Every screen had picked its own one-off font sizes for
@@ -63,18 +82,25 @@ export const darkColors = {
   circleBorder: "#39443E",
 };
 
-export const radius = { sm: 12, md: 18, lg: 24, xl: 30, xxl: 38, pill: 999 };
+// Tightened from the original 12/18/24/30/38 scale — a flat SaaS dashboard
+// reads as more precise/professional with a smaller, more restrained corner
+// radius than a consumer app's fuller rounding.
+export const radius = { sm: 10, md: 14, lg: 18, xl: 22, xxl: 28, pill: 999 };
+// Deliberately faint now (was 0.11/22/10) — cards are meant to be defined by
+// the `line` border + the `paper`-on-`cream` surface contrast, the same as
+// the flat, barely-there card depth in the account's chosen reference, not
+// by a heavy drop shadow.
 export const shadow = {
   shadowColor: "#18231E",
-  shadowOpacity: 0.11,
-  shadowRadius: 22,
-  shadowOffset: { width: 0, height: 10 },
-  elevation: 4,
+  shadowOpacity: 0.05,
+  shadowRadius: 10,
+  shadowOffset: { width: 0, height: 3 },
+  elevation: 1,
 };
 export const shadowSoft = {
   shadowColor: "#18231E",
-  shadowOpacity: 0.055,
-  shadowRadius: 14,
-  shadowOffset: { width: 0, height: 5 },
-  elevation: 2,
+  shadowOpacity: 0.03,
+  shadowRadius: 7,
+  shadowOffset: { width: 0, height: 2 },
+  elevation: 1,
 };

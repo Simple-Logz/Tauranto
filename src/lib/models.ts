@@ -13,6 +13,7 @@ export interface VoiceCommand {
   confidence: number;
   undoUntil?: string;
   approvalId?: string;
+  risk?: "low" | "medium" | "high" | "critical";
   executions?: ExecutionResult[];
 }
 export interface Integration {id:string;name:string;category:"Website"|"Calendar"|"CRM"|"Ordering"|"Communication"|"Automation";icon:string;tint:string;description:string;connected:boolean;account?:string;}
