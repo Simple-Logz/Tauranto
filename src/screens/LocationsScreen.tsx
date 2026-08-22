@@ -28,15 +28,20 @@ export function LocationsScreen({restaurantId,onSwitchLocation}:{restaurantId:st
 
  if(loading)return <ScrollView style={[s.page,dark&&s.pageDark]} contentContainerStyle={{padding:20,paddingTop:24}}><SkeletonCard lines={2}/><SkeletonCard lines={2}/></ScrollView>;
  return <ScrollView style={[s.page,dark&&s.pageDark]} contentContainerStyle={{padding:20,paddingTop:24,paddingBottom:120}}>
-  <Text style={[s.kicker,dark&&s.kickerDark]}>YOUR CHAIN</Text>
-  <Text style={[s.title,dark&&s.titleDark]}>{organization?.name||'Locations'}</Text>
+  <View style={s.headRow}>
+   <View style={{flex:1}}>
+    <Text style={[s.kicker,dark&&s.kickerDark]}>YOUR CHAIN</Text>
+    <Text style={[s.title,dark&&s.titleDark]}>{organization?.name||'Locations'}</Text>
+   </View>
+   {canAdd&&<Pressable accessibilityLabel="Add a new location" onPress={()=>setAddOpen(true)} style={s.addFab}><Ionicons name="add" size={27} color="white"/></Pressable>}
+  </View>
   <Text style={[s.copy,dark&&s.copyDark]}>{locations.length} location{locations.length===1?'':'s'} you have access to. Switch your active location, or add another under this same chain.</Text>
   {!!error&&<Text style={s.error}>{error}</Text>}
+  {canAdd&&<Pressable onPress={()=>setAddOpen(true)} style={s.addBanner}><View style={s.addBannerIcon}><Ionicons name="add-circle" size={22} color="white"/></View><View style={{flex:1}}><Text style={s.addBannerTitle}>Add a new location</Text><Text style={s.addBannerCopy}>Chains can add every restaurant they run under this account.</Text></View><Ionicons name="chevron-forward" size={19} color="white"/></Pressable>}
   {locations.map(l=><View key={l.id} style={[s.card,dark&&s.cardDark,l.isCurrent&&s.cardCurrent]}>
    <View style={s.cardTop}><View style={{flex:1}}><Text style={[s.cardTitle,dark&&s.cardTitleDark]}>{l.name}</Text><Text style={[s.cardMeta,dark&&s.cardMetaDark]}>{roleLabel(l.role)} · {l.memberCount} team member{l.memberCount===1?'':'s'}</Text></View>{l.isCurrent?<View style={s.currentBadge}><Text style={s.currentBadgeText}>CURRENT</Text></View>:<Pressable disabled={switching===l.id} onPress={()=>void switchTo(l.id)} style={s.switchBtn}>{switching===l.id?<ActivityIndicator color={colors.leafDeep}/>:<Text style={s.switchText}>Switch</Text>}</Pressable>}</View>
    <View style={s.statsRow}><Stat n={l.pending} label="PENDING"/><Stat n={l.completedToday} label="DONE TODAY"/><Stat n={l.connected} label="CONNECTED"/></View>
   </View>)}
-  {canAdd&&<Pressable onPress={()=>setAddOpen(true)} style={[s.addCard,dark&&s.addCardDark]}><Ionicons name="add-circle-outline" size={22} color={colors.leafDeep}/><Text style={[s.addText,dark&&s.addTextDark]}>Add another location</Text></Pressable>}
 
   <Text style={[s.sectionTitle,dark&&s.sectionTitleDark]}>COMBINED ACTIVITY</Text>
   <Text style={[s.copy,dark&&s.copyDark]}>Recent commands and approvals from every location above, newest first.</Text>
@@ -63,8 +68,10 @@ function roleLabel(role:string){return{owner:'Owner',admin:'Admin',manager:'Mana
 function statusColor(status:string){if(status==='completed')return{color:colors.leafDeep};if(status==='pending_approval')return{color:'#B4740A'};if(status==='rejected')return{color:colors.tomatoDeep};return{color:'#6B746E'}}
 const s=StyleSheet.create({
  page:{flex:1,backgroundColor:'#FAFBF9'},pageDark:{backgroundColor:darkColors.bg},
+ headRow:{flexDirection:'row',alignItems:'flex-start',gap:12},
  kicker:{...type.eyebrow,color:colors.leafDeep},kickerDark:{color:colors.leaf},
  title:{...type.title,color:'#1E2420',marginTop:4},titleDark:{color:darkColors.text},
+ addFab:{width:50,height:50,borderRadius:16,backgroundColor:colors.leafDeep,alignItems:'center',justifyContent:'center',shadowColor:colors.leafInk,shadowOpacity:.2,shadowRadius:10,shadowOffset:{width:0,height:4},elevation:3},
  copy:{fontFamily:'NunitoSans_700Bold',fontSize:13,lineHeight:19,color:'#6F786F',marginTop:8,marginBottom:14},copyDark:{color:darkColors.textMuted},
  error:{fontFamily:'NunitoSans_700Bold',fontSize:13,color:colors.tomatoDeep,marginBottom:10},
  card:{borderWidth:1,borderColor:'#E5EAE5',borderRadius:18,backgroundColor:'#fff',padding:15,marginBottom:10},cardDark:{backgroundColor:darkColors.card,borderColor:darkColors.border},cardCurrent:{borderColor:colors.leafTint,borderWidth:1.5},
@@ -74,7 +81,10 @@ const s=StyleSheet.create({
  currentBadge:{backgroundColor:colors.leafPale,paddingHorizontal:10,paddingVertical:6,borderRadius:999},currentBadgeText:{fontFamily:'NunitoSans_900Black',fontSize:9,color:colors.leafDeep},
  switchBtn:{backgroundColor:colors.leaf,paddingHorizontal:14,paddingVertical:8,borderRadius:999,minWidth:64,alignItems:'center'},switchText:{fontFamily:'NunitoSans_900Black',fontSize:11,color:'#fff'},
  statsRow:{flexDirection:'row',gap:8,marginTop:12},stat:{flex:1,backgroundColor:'#F5F7F5',borderRadius:12,paddingVertical:9,alignItems:'center'},statValue:{fontFamily:'NunitoSans_900Black',fontSize:16,color:'#1E2420'},statLabel:{fontFamily:'NunitoSans_900Black',fontSize:7.5,letterSpacing:.6,color:'#7B837B',marginTop:2},
- addCard:{flexDirection:'row',alignItems:'center',gap:9,borderWidth:1,borderStyle:'dashed',borderColor:colors.leafTint,borderRadius:16,padding:14,marginTop:2,marginBottom:6},addCardDark:{borderColor:darkColors.border},addText:{fontFamily:'NunitoSans_900Black',fontSize:13,color:colors.leafDeep},addTextDark:{color:colors.leaf},
+ addBanner:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:colors.leafDeep,borderRadius:18,padding:15,marginBottom:14,shadowColor:colors.leafInk,shadowOpacity:.18,shadowRadius:14,shadowOffset:{width:0,height:6},elevation:3},
+ addBannerIcon:{width:36,height:36,borderRadius:12,backgroundColor:'rgba(255,255,255,.18)',alignItems:'center',justifyContent:'center'},
+ addBannerTitle:{fontFamily:'NunitoSans_900Black',fontSize:15,color:'#fff'},
+ addBannerCopy:{fontFamily:'NunitoSans_600SemiBold',fontSize:11.5,lineHeight:16,color:'rgba(255,255,255,.86)',marginTop:2},
  sectionTitle:{fontFamily:'NunitoSans_900Black',fontSize:12,letterSpacing:1,color:'#3A423B',marginTop:26},sectionTitleDark:{color:darkColors.text},
  feedRow:{borderWidth:1,borderColor:'#E5EAE5',borderRadius:16,backgroundColor:'#fff',padding:13,marginBottom:9},feedRowDark:{backgroundColor:darkColors.card,borderColor:darkColors.border},
  feedTop:{flexDirection:'row',justifyContent:'space-between'},feedLocation:{fontFamily:'NunitoSans_900Black',fontSize:9.5,letterSpacing:.6,color:colors.leafDeep},feedLocationDark:{color:colors.leaf},feedTime:{fontFamily:'NunitoSans_700Bold',fontSize:10,color:'#8A928A'},feedTimeDark:{color:darkColors.textMuted},

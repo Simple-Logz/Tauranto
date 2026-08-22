@@ -1,0 +1,543 @@
+From 1f7eadaaa44ced8bb41cd8280532b88819e3fe32 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 21 Aug 2026 16:17:59 +0000
+Subject: [PATCH] Disable Square action execution honestly; add real Stripe
+ billing at $30/$65
+
+Square: OAuth connect still works, but buildImpactPlan now excludes Square
+from every action plan regardless of connection status, so a voice command
+that would have silently gone to Square instead surfaces the existing
+'No configured delivery channel can execute this action yet.' message.
+executor.ts also throws a clear error if a Square job ever reaches it, as a
+defense-in-depth backstop. IntegrationsScreen now says so on the connected
+card too.
+
+Billing: Basic ($30/mo) and Enterprise ($65/mo) now go through real Stripe
+Checkout (api/billing/checkout.ts) instead of the previous 'owner_test'
+button that flipped the plan for free. A new webhook
+(api/billing/webhook.ts) verifies Stripe's signature and activates/updates/
+cancels the subscription from checkout.session.completed and
+customer.subscription.updated/deleted. api/billing/switch.ts is now
+free-plan-only, so there is no way to grant paid entitlements without an
+actual Stripe payment, and downgrading to free cancels any active Stripe
+subscription. BillingScreen and the MoreScreen billing modal open Stripe
+Checkout in the browser and refresh the plan automatically when the app
+regains focus. Corrected the placeholder $14.99/$29.99 prices everywhere,
+including a new migration for the plans table.
+---
+ .env.example                               |   9 ++
+ README.md                                  |   5 +
+ api/billing/checkout.ts                    |  80 ++++++++++++++
+ api/billing/switch.ts                      |  23 +++--
+ api/billing/webhook.ts                     | 115 +++++++++++++++++++++
+ package-lock.json                          |  18 ++++
+ package.json                               |   3 +-
+ server/executor.ts                         |   2 +-
+ server/operations.test.ts                  |  18 ++++
+ server/operations.ts                       |  12 ++-
+ src/lib/api.ts                             |   2 +-
+ src/screens/BillingScreen.tsx              |  10 +-
+ src/screens/IntegrationsScreen.tsx         |   2 +-
+ src/screens/MoreScreen.tsx                 |   8 +-
+ supabase/migrations/017_pricing_update.sql |   6 ++
+ 15 files changed, 296 insertions(+), 17 deletions(-)
+ create mode 100644 api/billing/checkout.ts
+ create mode 100644 api/billing/webhook.ts
+ create mode 100644 supabase/migrations/017_pricing_update.sql
+
+diff --git a/.env.example b/.env.example
+index 4a6e9ef..346d627 100644
+--- a/.env.example
++++ b/.env.example
+@@ -22,6 +22,15 @@ TWILIO_FROM_NUMBER=
+ APP_URL=http://localhost:8081
+ CRON_SECRET=
+ CONNECTOR_WEBHOOK_SECRET=
++# Stripe billing. STRIPE_SECRET_KEY is your restricted/secret API key from
++# the Stripe Dashboard. STRIPE_WEBHOOK_SECRET is the signing secret for the
++# webhook endpoint you create pointing at <APP_URL>/api/billing/webhook,
++# subscribed to checkout.session.completed, customer.subscription.updated,
++# and customer.subscription.deleted. Basic/Enterprise checkout (POST
++# /api/billing/checkout) throws a clear configuration error if these are
++# unset — there is no free/paid bypass.
++STRIPE_SECRET_KEY=
++STRIPE_WEBHOOK_SECRET=
+ # Optional. Leave blank to run without error monitoring (nothing breaks).
+ # Set to a project DSN from sentry.io to have unexpected server errors
+ # reported there instead of only sitting in Vercel's function logs.
+diff --git a/README.md b/README.md
+index a1e4243..e061b40 100644
+--- a/README.md
++++ b/README.md
+@@ -28,6 +28,7 @@ Tauranto is a mobile-first restaurant operations assistant. It captures a spoken
+ - OpenAI Platform API key
+ - Vercel
+ - Resend for approval emails
++- Stripe for Basic/Enterprise billing
+ - Optional Twilio for SMS; do not enable until sender compliance and consent are configured
+ 
+ ## 1. Supabase
+@@ -53,6 +54,8 @@ Copy `.env.example` to `.env.local`. In Vercel, add the same values under Projec
+ 
+ `SENTRY_DSN` is optional — leave it blank to run without error monitoring. Set it to a project DSN from sentry.io to have unexpected server errors reported there instead of only sitting in Vercel's function logs.
+ 
++`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are required for Basic ($30/month) and Enterprise ($65/month) checkout to work; the Free plan needs neither. Create a webhook endpoint in the Stripe Dashboard pointing at `<APP_URL>/api/billing/webhook`, subscribed to `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`, then copy its signing secret into `STRIPE_WEBHOOK_SECRET`. Run `supabase/migrations/017_pricing_update.sql` (in order with the rest) to set the corrected prices.
++
+ Never paste keys into chat, commit `.env.local`, embed private keys in Expo, or expose the Supabase service-role key.
+ 
+ ## 3. Voice standby and native build
+@@ -99,6 +102,8 @@ Sign in through Supabase and send its access token as `Authorization: Bearer <to
+ - `POST /api/approvals/decision` — authenticated manager decision
+ - `POST /api/realtime/session` — ephemeral Realtime client secret
+ - `GET /api/jobs/run` — cron-protected execution worker
++- `POST /api/billing/checkout` — creates a Stripe Checkout session for Basic/Enterprise
++- `POST /api/billing/webhook` — Stripe webhook; activates/updates/cancels a subscription
+ 
+ Supplier email executes through Resend. All other approved actions use a configured `custom_webhook` integration. OAuth connectors for Toast, Square, Google Calendar, Microsoft, HubSpot, Shopify, and WordPress require each provider’s credentials and cannot be made live with code alone.
+ 
+diff --git a/api/billing/checkout.ts b/api/billing/checkout.ts
+new file mode 100644
+index 0000000..f91e0f2
+--- /dev/null
++++ b/api/billing/checkout.ts
+@@ -0,0 +1,80 @@
++import type { VercelRequest, VercelResponse } from "@vercel/node";
++import { z } from "zod";
++import Stripe from "stripe";
++import { admin, fail, requireUser } from "../../server/http";
++
++const schema = z.object({ restaurantId: z.string().uuid(), planId: z.enum(["basic", "enterprise"]) });
++
++export default async function handler(req: VercelRequest, res: VercelResponse) {
++  if (req.method !== "POST") return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
++  try {
++    const user = await requireUser(req);
++    const body = schema.parse(req.body);
++    const db = admin();
++
++    const { data: member } = await db
++      .from("restaurant_members")
++      .select("role")
++      .eq("restaurant_id", body.restaurantId)
++      .eq("user_id", user.id)
++      .eq("active", true)
++      .single();
++    if (!member || !["owner", "admin"].includes(member.role)) throw new Error("FORBIDDEN");
++
++    const { data: plan, error: planError } = await db
++      .from("plans")
++      .select("id,name,monthly_price_cents")
++      .eq("id", body.planId)
++      .eq("active", true)
++      .single();
++    if (planError) throw planError;
++    if (!plan.monthly_price_cents) throw new Error("PLAN_NOT_PAYABLE");
++
++    if (!process.env.STRIPE_SECRET_KEY) throw new Error("Billing is not configured yet. Set STRIPE_SECRET_KEY in Vercel.");
++    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
++
++    const { data: existingSub } = await db
++      .from("restaurant_subscriptions")
++      .select("provider_customer_id")
++      .eq("restaurant_id", body.restaurantId)
++      .maybeSingle();
++
++    let customerId = existingSub?.provider_customer_id || undefined;
++    if (!customerId) {
++      const { data: restaurant } = await db.from("restaurants").select("name").eq("id", body.restaurantId).single();
++      const customer = await stripe.customers.create({
++        email: user.email || undefined,
++        name: restaurant?.name || undefined,
++        metadata: { restaurantId: body.restaurantId },
++      });
++      customerId = customer.id;
++    }
++
++    const appUrl = (process.env.APP_URL || "http://localhost:8081").replace(/\/$/, "");
++    const session = await stripe.checkout.sessions.create({
++      mode: "subscription",
++      customer: customerId,
++      client_reference_id: body.restaurantId,
++      line_items: [
++        {
++          price_data: {
++            currency: "usd",
++            product_data: { name: `Tauranto ${plan.name}` },
++            unit_amount: plan.monthly_price_cents,
++            recurring: { interval: "month" },
++          },
++          quantity: 1,
++        },
++      ],
++      subscription_data: { metadata: { restaurantId: body.restaurantId, planId: body.planId } },
++      metadata: { restaurantId: body.restaurantId, planId: body.planId },
++      success_url: `${appUrl}/?billing=success`,
++      cancel_url: `${appUrl}/?billing=cancelled`,
++    });
++
++    if (!session.url) throw new Error("CHECKOUT_SESSION_FAILED");
++    return res.json({ checkoutUrl: session.url });
++  } catch (error) {
++    return fail(res, error);
++  }
++}
+diff --git a/api/billing/switch.ts b/api/billing/switch.ts
+index 844f0ef..f9b89ec 100644
+--- a/api/billing/switch.ts
++++ b/api/billing/switch.ts
+@@ -1,19 +1,28 @@
+ import type {VercelRequest,VercelResponse} from "@vercel/node";
+ import {z} from "zod";
++import Stripe from "stripe";
+ import {admin,fail,requireUser} from "../../server/http";
+-const schema=z.object({restaurantId:z.string().uuid(),planId:z.enum(["free","basic","enterprise"])});
++// Paid plans go through Stripe Checkout (see api/billing/checkout.ts) and are
++// activated by the Stripe webhook once payment is confirmed — this endpoint
++// only ever switches a restaurant to the free plan directly, so there is no
++// way to grant a paid plan's entitlements without actually paying for it.
++const schema=z.object({restaurantId:z.string().uuid(),planId:z.literal("free")});
+ export default async function handler(req:VercelRequest,res:VercelResponse){
+  if(req.method!=="POST")return res.status(405).json({error:"METHOD_NOT_ALLOWED"});
+  try{
+   const user=await requireUser(req),body=schema.parse(req.body),db=admin();
+   const {data:member}=await db.from("restaurant_members").select("role").eq("restaurant_id",body.restaurantId).eq("user_id",user.id).eq("active",true).single();
+   if(!member||!['owner','admin'].includes(member.role))throw new Error("FORBIDDEN");
+-  const {data:plan,error:planError}=await db.from("plans").select("id,name,monthly_price_cents,description,features,entitlements").eq("id",body.planId).eq("active",true).single();if(planError)throw planError;
+-  const {data:existing}=await db.from("restaurant_subscriptions").select("id").eq("restaurant_id",body.restaurantId).maybeSingle();
++  const {data:plan,error:planError}=await db.from("plans").select("id,name,monthly_price_cents,description,features,entitlements").eq("id","free").eq("active",true).single();if(planError)throw planError;
++  const {data:existing}=await db.from("restaurant_subscriptions").select("id,provider,provider_subscription_id").eq("restaurant_id",body.restaurantId).maybeSingle();
++  if(existing?.provider==="stripe"&&existing.provider_subscription_id&&process.env.STRIPE_SECRET_KEY){
++   try{await new Stripe(process.env.STRIPE_SECRET_KEY).subscriptions.cancel(existing.provider_subscription_id)}
++   catch(e){console.warn("Stripe subscription cancel failed while downgrading to free",e)}
++  }
+   let subscription:any;
+-  if(existing){const {data,error}=await db.from("restaurant_subscriptions").update({plan_id:body.planId,status:"active",provider:"owner_test",updated_at:new Date().toISOString()}).eq("id",existing.id).select("id,status,current_period_end,plan_id").single();if(error)throw error;subscription=data}
+-  else{const {data,error}=await db.from("restaurant_subscriptions").insert({restaurant_id:body.restaurantId,plan_id:body.planId,status:"active",provider:"owner_test"}).select("id,status,current_period_end,plan_id").single();if(error)throw error;subscription=data}
+-  await db.from("audit_events").insert({restaurant_id:body.restaurantId,actor_id:user.id,event:"owner_plan_switched",metadata:{plan_id:body.planId,mode:"owner_test"}});
+-  return res.json({subscription:{...subscription,plans:plan},testing:true});
++  if(existing){const {data,error}=await db.from("restaurant_subscriptions").update({plan_id:"free",status:"active",provider:"none",provider_subscription_id:null,current_period_end:null,updated_at:new Date().toISOString()}).eq("id",existing.id).select("id,status,current_period_end,plan_id").single();if(error)throw error;subscription=data}
++  else{const {data,error}=await db.from("restaurant_subscriptions").insert({restaurant_id:body.restaurantId,plan_id:"free",status:"active",provider:"none"}).select("id,status,current_period_end,plan_id").single();if(error)throw error;subscription=data}
++  await db.from("audit_events").insert({restaurant_id:body.restaurantId,actor_id:user.id,event:"plan_switched_to_free",metadata:{plan_id:"free"}});
++  return res.json({subscription:{...subscription,plans:plan}});
+  }catch(error){return fail(res,error)}
+ }
+diff --git a/api/billing/webhook.ts b/api/billing/webhook.ts
+new file mode 100644
+index 0000000..c65b8c8
+--- /dev/null
++++ b/api/billing/webhook.ts
+@@ -0,0 +1,115 @@
++import type { VercelRequest, VercelResponse } from "@vercel/node";
++import Stripe from "stripe";
++import { admin } from "../../server/http";
++import { captureError } from "../../server/monitoring";
++
++// Stripe requires the exact raw request bytes to verify a webhook signature,
++// so Vercel's normal JSON body parsing must be disabled for this route.
++export const config = { api: { bodyParser: false } };
++
++function readRawBody(req: VercelRequest): Promise<Buffer> {
++  return new Promise((resolve, reject) => {
++    const chunks: Buffer[] = [];
++    req.on("data", (chunk: Buffer) => chunks.push(chunk));
++    req.on("end", () => resolve(Buffer.concat(chunks)));
++    req.on("error", reject);
++  });
++}
++
++// Recent Stripe API versions moved current_period_end off Subscription and
++// onto each SubscriptionItem (a subscription can have multiple items on
++// different billing cycles). Tauranto only ever creates one item per
++// subscription (see api/billing/checkout.ts), so the first item's period end
++// is the subscription's period end for our purposes.
++function periodEnd(sub: Stripe.Subscription): string | null {
++  const end = sub.items.data[0]?.current_period_end;
++  return end ? new Date(end * 1000).toISOString() : null;
++}
++
++function mapStatus(status: Stripe.Subscription.Status): "trialing" | "active" | "past_due" | "cancelled" {
++  if (status === "trialing") return "trialing";
++  if (status === "active") return "active";
++  if (status === "canceled" || status === "incomplete_expired") return "cancelled";
++  // past_due, unpaid, incomplete, paused: something needs attention, but the
++  // subscription isn't confirmed dead yet.
++  return "past_due";
++}
++
++export default async function handler(req: VercelRequest, res: VercelResponse) {
++  if (req.method !== "POST") return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
++
++  const secret = process.env.STRIPE_WEBHOOK_SECRET;
++  const signature = req.headers["stripe-signature"];
++  if (!process.env.STRIPE_SECRET_KEY || !secret || !signature) {
++    return res.status(400).json({ error: "STRIPE_WEBHOOK_NOT_CONFIGURED" });
++  }
++
++  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
++  let event: Stripe.Event;
++  try {
++    const raw = await readRawBody(req);
++    event = stripe.webhooks.constructEvent(raw, signature as string, secret);
++  } catch (e) {
++    console.error("Stripe webhook signature verification failed", e);
++    return res.status(400).json({ error: "INVALID_SIGNATURE" });
++  }
++
++  const db = admin();
++  try {
++    if (event.type === "checkout.session.completed") {
++      const session = event.data.object as Stripe.Checkout.Session;
++      const restaurantId = session.client_reference_id || session.metadata?.restaurantId;
++      const planId = session.metadata?.planId;
++      if (restaurantId && planId) {
++        const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
++        let status: "trialing" | "active" | "past_due" | "cancelled" = "active";
++        let currentPeriodEnd: string | null = null;
++        if (subscriptionId) {
++          const sub = await stripe.subscriptions.retrieve(subscriptionId);
++          status = mapStatus(sub.status);
++          currentPeriodEnd = periodEnd(sub);
++        }
++        await db.from("restaurant_subscriptions").upsert(
++          {
++            restaurant_id: restaurantId,
++            plan_id: planId,
++            status,
++            provider: "stripe",
++            provider_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id,
++            provider_subscription_id: subscriptionId || null,
++            current_period_end: currentPeriodEnd,
++            updated_at: new Date().toISOString(),
++          },
++          { onConflict: "restaurant_id" },
++        );
++        await db.from("audit_events").insert({
++          restaurant_id: restaurantId,
++          event: "stripe_checkout_completed",
++          metadata: { planId, subscriptionId },
++        });
++      }
++    } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
++      const sub = event.data.object as Stripe.Subscription;
++      const restaurantId = sub.metadata?.restaurantId;
++      const status = event.type === "customer.subscription.deleted" ? "cancelled" : mapStatus(sub.status);
++      const update = {
++        status,
++        current_period_end: periodEnd(sub),
++        updated_at: new Date().toISOString(),
++      };
++      if (restaurantId) {
++        await db.from("restaurant_subscriptions").update(update).eq("restaurant_id", restaurantId);
++      } else {
++        // Metadata should always carry restaurantId (set at checkout time),
++        // but fall back to matching on the Stripe subscription id in case an
++        // older subscription predates that metadata being set.
++        await db.from("restaurant_subscriptions").update(update).eq("provider_subscription_id", sub.id);
++      }
++    }
++    return res.status(200).json({ received: true });
++  } catch (e) {
++    console.error("Stripe webhook handling failed", e);
++    captureError(e, { path: "/api/billing/webhook", stripeEvent: event.type });
++    return res.status(500).json({ error: "WEBHOOK_HANDLING_FAILED" });
++  }
++}
+diff --git a/package-lock.json b/package-lock.json
+index d78f740..b775f47 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -36,6 +36,7 @@
+         "react-native-screens": "~4.16.0",
+         "react-native-web": "^0.21.0",
+         "resend": "^6.0.1",
++        "stripe": "^22.5.0",
+         "zod": "^3.25.76"
+       },
+       "devDependencies": {
+@@ -13991,6 +13992,23 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/stripe": {
++      "version": "22.5.0",
++      "resolved": "https://registry.npmjs.org/stripe/-/stripe-22.5.0.tgz",
++      "integrity": "sha512-QVwMwriC0bbySx6R4dpsvJ0W//GojC1kwWVS6rPSoVqDUIZX4Hy3TaUrd2AZeXEAaKbfWIjQjvo3vKAReHZ0vQ==",
++      "license": "MIT",
++      "engines": {
++        "node": ">=18"
++      },
++      "peerDependencies": {
++        "@types/node": ">=18"
++      },
++      "peerDependenciesMeta": {
++        "@types/node": {
++          "optional": true
++        }
++      }
++    },
+     "node_modules/structured-headers": {
+       "version": "0.4.1",
+       "resolved": "https://registry.npmjs.org/structured-headers/-/structured-headers-0.4.1.tgz",
+diff --git a/package.json b/package.json
+index 33592fc..72bd2fa 100644
+--- a/package.json
++++ b/package.json
+@@ -43,13 +43,14 @@
+     "react-native-screens": "~4.16.0",
+     "react-native-web": "^0.21.0",
+     "resend": "^6.0.1",
++    "stripe": "^22.5.0",
+     "zod": "^3.25.76"
+   },
+   "devDependencies": {
+     "@types/react": "~19.1.10",
+-    "@vercel/node": "^5.3.0",
+     "@typescript-eslint/eslint-plugin": "^8.0.0",
+     "@typescript-eslint/parser": "^8.0.0",
++    "@vercel/node": "^5.3.0",
+     "eslint": "^9.9.0",
+     "prettier": "^3.3.3",
+     "typescript": "~5.9.2",
+diff --git a/server/executor.ts b/server/executor.ts
+index 425d645..5d1820c 100644
+--- a/server/executor.ts
++++ b/server/executor.ts
+@@ -9,6 +9,6 @@ async function calendar(db:any,i:any,action:string,p:any,title:string,summary:st
+ async function zoomCreate(db:any,i:any,p:any,title:string){const token=await refreshOAuth(db,i,'zoom'),r=await fetch('https://api.zoom.us/v2/users/me/meetings',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({topic:title,type:2,start_time:str(p,'start_time','scheduled_at','resolved_datetime'),duration:Number(p.duration_minutes||30),timezone:str(p,'timezone')||'UTC',agenda:str(p,'agenda','description')})}),j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||`ZOOM_CREATE_FAILED_${r.status}`);return{verified:!!j.id,method:'zoom',meetingId:j.id,joinUrl:j.join_url}}
+ async function bearerCall(i:any,url:string,method:string,body:any){const c:any=decryptCredentials(i.encrypted_credentials),r=await fetch(url,{method,headers:{Authorization:`Bearer ${c.access_token}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)}),j:any=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.message||j.error||`PROVIDER_FAILED_${r.status}`);return j}
+ export async function executeJob(job:any){const db=admin(),{data:command}=await db.from('commands').select('*,restaurants(name)').eq('id',job.command_id).single();if(!command||command.status!=='approved')throw new Error('COMMAND_NOT_APPROVED');const {data:integrations}=await db.from('integrations').select('*').eq('restaurant_id',command.restaurant_id).eq('status','connected');await event(db,command,job,'execute','executing',{provider:job.provider,action:job.action_key});const p=job.payload||{};let v:any={verified:false};const integration=(name:string)=>(integrations||[]).find((i:any)=>i.provider===name);
+-if(job.provider==='sms')v=await twilioSms(str(p,'recipient_phone','phone'),str(p,'message','body','purpose')||command.summary);else if(job.provider==='gmail'){const i=integration('gmail');if(!i)throw new Error('GMAIL_NOT_CONNECTED');v=await gmailSend(db,i,str(p,'recipient_email','email','to'),command.title,str(p,'message','body','purpose')||command.summary)}else if(job.provider==='google_calendar'){const i=integration('google_calendar');if(!i)throw new Error('GOOGLE_CALENDAR_NOT_CONNECTED');v=await calendar(db,i,job.action_key,p,command.title,command.summary)}else if(job.provider==='zoom'){const i=integration('zoom');if(!i)throw new Error('ZOOM_NOT_CONNECTED');v=await zoomCreate(db,i,p,command.title)}else if(job.provider==='hubspot'){const i=integration('hubspot');if(!i)throw new Error('HUBSPOT_NOT_CONNECTED');let url='https://api.hubapi.com/crm/v3/objects/contacts',method='POST',body:any={properties:p.properties||p};if(job.action_key==='update_contact'){const id=str(p,'contact_id','id');url+=`/${encodeURIComponent(id)}`;method='PATCH'}else if(job.action_key==='create_note'){url='https://api.hubapi.com/crm/v3/objects/notes'}else if(job.action_key==='create_task'){url='https://api.hubapi.com/crm/v3/objects/tasks'}const j=await bearerCall(i,url,method,body);v={verified:!!j.id,method:'hubspot',id:j.id}}else if(job.provider==='slack'){const i=integration('slack');if(!i)throw new Error('SLACK_NOT_CONNECTED');const j=await bearerCall(i,'https://slack.com/api/chat.postMessage','POST',{channel:str(p,'channel','channel_id'),text:str(p,'message','text')||command.summary});if(j.ok===false)throw new Error(j.error||'SLACK_FAILED');v={verified:!!j.ok,method:'slack',ts:j.ts}}else if(job.provider==='email'){const to=str(p,'recipient_email','email','to');if(!process.env.RESEND_API_KEY||!process.env.NOTIFICATION_FROM)throw new Error('EMAIL_NOT_CONFIGURED');const r:any=await new Resend(process.env.RESEND_API_KEY).emails.send({from:process.env.NOTIFICATION_FROM,to,subject:command.title,text:str(p,'message','body')||command.summary});if(r.error)throw new Error(r.error.message);v={verified:!!r.data?.id,method:'resend',messageId:r.data?.id}}else if(job.provider==='staff'){v={verified:true,method:'internal'}}else{const i=integration(job.provider)||integration('custom_webhook');if(!i?.config?.url)throw new Error(`NO_${String(job.provider).toUpperCase()}_CONNECTOR`);const r=await fetch(i.config.url,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':job.idempotency_key,'X-Tauranto-Signature':process.env.CONNECTOR_WEBHOOK_SECRET||''},body:JSON.stringify({commandId:command.id,provider:job.provider,action:job.action_key,parameters:p,approved:true})});if(!r.ok)throw new Error(`CONNECTOR_FAILED_${r.status}`);const j:any=await r.json().catch(()=>({}));v={verified:j.verified===true,method:'connector',observed:j.observed};if(!v.verified)throw new Error('EXECUTED_BUT_NOT_VERIFIED')}
++if(job.provider==='square')throw new Error('Square execution is not built yet — this action could not run. Square can be connected, but only for future use.');else if(job.provider==='sms')v=await twilioSms(str(p,'recipient_phone','phone'),str(p,'message','body','purpose')||command.summary);else if(job.provider==='gmail'){const i=integration('gmail');if(!i)throw new Error('GMAIL_NOT_CONNECTED');v=await gmailSend(db,i,str(p,'recipient_email','email','to'),command.title,str(p,'message','body','purpose')||command.summary)}else if(job.provider==='google_calendar'){const i=integration('google_calendar');if(!i)throw new Error('GOOGLE_CALENDAR_NOT_CONNECTED');v=await calendar(db,i,job.action_key,p,command.title,command.summary)}else if(job.provider==='zoom'){const i=integration('zoom');if(!i)throw new Error('ZOOM_NOT_CONNECTED');v=await zoomCreate(db,i,p,command.title)}else if(job.provider==='hubspot'){const i=integration('hubspot');if(!i)throw new Error('HUBSPOT_NOT_CONNECTED');let url='https://api.hubapi.com/crm/v3/objects/contacts',method='POST',body:any={properties:p.properties||p};if(job.action_key==='update_contact'){const id=str(p,'contact_id','id');url+=`/${encodeURIComponent(id)}`;method='PATCH'}else if(job.action_key==='create_note'){url='https://api.hubapi.com/crm/v3/objects/notes'}else if(job.action_key==='create_task'){url='https://api.hubapi.com/crm/v3/objects/tasks'}const j=await bearerCall(i,url,method,body);v={verified:!!j.id,method:'hubspot',id:j.id}}else if(job.provider==='slack'){const i=integration('slack');if(!i)throw new Error('SLACK_NOT_CONNECTED');const j=await bearerCall(i,'https://slack.com/api/chat.postMessage','POST',{channel:str(p,'channel','channel_id'),text:str(p,'message','text')||command.summary});if(j.ok===false)throw new Error(j.error||'SLACK_FAILED');v={verified:!!j.ok,method:'slack',ts:j.ts}}else if(job.provider==='email'){const to=str(p,'recipient_email','email','to');if(!process.env.RESEND_API_KEY||!process.env.NOTIFICATION_FROM)throw new Error('EMAIL_NOT_CONFIGURED');const r:any=await new Resend(process.env.RESEND_API_KEY).emails.send({from:process.env.NOTIFICATION_FROM,to,subject:command.title,text:str(p,'message','body')||command.summary});if(r.error)throw new Error(r.error.message);v={verified:!!r.data?.id,method:'resend',messageId:r.data?.id}}else if(job.provider==='staff'){v={verified:true,method:'internal'}}else{const i=integration(job.provider)||integration('custom_webhook');if(!i?.config?.url)throw new Error(`NO_${String(job.provider).toUpperCase()}_CONNECTOR`);const r=await fetch(i.config.url,{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':job.idempotency_key,'X-Tauranto-Signature':process.env.CONNECTOR_WEBHOOK_SECRET||''},body:JSON.stringify({commandId:command.id,provider:job.provider,action:job.action_key,parameters:p,approved:true})});if(!r.ok)throw new Error(`CONNECTOR_FAILED_${r.status}`);const j:any=await r.json().catch(()=>({}));v={verified:j.verified===true,method:'connector',observed:j.observed};if(!v.verified)throw new Error('EXECUTED_BUT_NOT_VERIFIED')}
+ if(!v.verified)throw new Error('DELIVERY_NOT_VERIFIED');await db.from('execution_jobs').update({status:'completed',completed_at:new Date().toISOString(),verification:v}).eq('id',job.id);await event(db,command,job,'verify','completed',v);const {data:remaining}=await db.from('execution_jobs').select('status').eq('command_id',command.id);if((remaining||[]).every((j:any)=>j.status==='completed')){await db.from('commands').update({status:'completed',verified_at:new Date().toISOString()}).eq('id',command.id);await event(db,command,job,'notify','completed',{message:'All approved actions verified'})}}
+ async function event(db:any,command:any,job:any,stage:string,status:string,detail:any){await db.from('operation_events').insert({restaurant_id:command.restaurant_id,command_id:command.id,job_id:job.id,stage,status,detail})}
+diff --git a/server/operations.test.ts b/server/operations.test.ts
+index 4d910e7..a2c7243 100644
+--- a/server/operations.test.ts
++++ b/server/operations.test.ts
+@@ -81,6 +81,24 @@ describe("buildImpactPlan", () => {
+     expect(plan.some((p) => p.provider === "gmail")).toBe(true);
+     expect(plan.some((p) => p.provider === "email")).toBe(false);
+   });
++
++  it("never plans a square action, even when a square integration shows as connected", () => {
++    // Square OAuth connect works (see IntegrationsScreen), but execution is
++    // not built — buildImpactPlan must exclude it regardless of connection
++    // status so the app fails honestly (via validateProposal's "no
++    // configured delivery channel" message) instead of silently accepting a
++    // command it can't carry out.
++    const integrations = [{ provider: "square", status: "connected" }];
++    const menuPlan = buildImpactPlan(baseProposal(), integrations);
++    expect(menuPlan.some((p) => p.provider === "square")).toBe(false);
++    expect(menuPlan).toHaveLength(0);
++
++    const orderPlan = buildImpactPlan(
++      baseProposal({ action_type: "square_order", parameters: {} }),
++      integrations,
++    );
++    expect(orderPlan).toHaveLength(0);
++  });
+ });
+ 
+ describe("requiredApprovals", () => {
+diff --git a/server/operations.ts b/server/operations.ts
+index 932df49..be1ec6d 100644
+--- a/server/operations.ts
++++ b/server/operations.ts
+@@ -2,5 +2,15 @@ export type Impact={provider:string;action:string;description:string;required:bo
+ const supported=new Set(['menu_availability','business_hours','pause_orders','announcement','internal_task','supplier_email','purchase_request','contact_message','calendar_reminder','schedule_meeting','update_meeting','cancel_meeting','send_email','crm_contact_create','crm_contact_update','crm_note','crm_task','square_catalog_update','square_order','toast_menu_update','toast_order_action','zoom_meeting','customer_followup','website_update']);
+ const value=(x:any,...keys:string[])=>keys.map(k=>x?.[k]).find(v=>v!==undefined&&v!==null&&String(v).trim()!=='');
+ export function validateProposal(p:any){const problems:string[]=[];if(!supported.has(p.action_type))problems.push('This action is not enabled for execution yet.');if(p.confidence<.75)problems.push('I am not confident enough about that instruction yet.');if(p.ambiguities?.length)problems.push(...p.ambiguities);const x=p.parameters||{};if(p.action_type==='menu_availability'&&!value(x,'item','menu_item'))problems.push('Menu item is required.');if(p.action_type==='business_hours'&&!value(x,'date','effective_date','resolved_date'))problems.push('A specific effective date is required.');if(p.action_type==='pause_orders'&&!value(x,'duration','until','resume_at'))problems.push('Pause duration or resume time is required.');if(['schedule_meeting','zoom_meeting'].includes(p.action_type)&&!value(x,'start_time','scheduled_at','resolved_datetime'))problems.push('What date and time should I schedule it for?');if(['update_meeting','cancel_meeting'].includes(p.action_type)&&!value(x,'meeting_id','event_id','subject','title'))problems.push('Which meeting should I change?');if(['supplier_email','send_email'].includes(p.action_type)&&!value(x,'recipient_email','email','to'))problems.push('What email address should I use?');if(p.action_type==='purchase_request'){if(!value(x,'recipient_email','email'))problems.push('The vendor must have an email address in the Operations Directory.');if(!value(x,'item','product'))problems.push('Purchase item is required.');if(!value(x,'quantity'))problems.push('Purchase quantity is required.');}if(p.action_type==='contact_message'){const channel=String(value(x,'channel')||'').toLowerCase();if(channel==='call')problems.push('Outbound phone calls are not enabled yet. Use SMS or email.');else if(channel==='sms'&&!value(x,'recipient_phone','phone'))problems.push('This contact needs a phone number.');else if(channel==='email'&&!value(x,'recipient_email','email'))problems.push('This contact needs an email address.');if(!value(x,'message','body','purpose'))problems.push('What message should I send?')}return{valid:problems.length===0,problems,threshold:.75}}
+-export function buildImpactPlan(p:any,integrations:any[]):Impact[]{const connected=(name:string)=>integrations.some(i=>i.status==='connected'&&i.provider===name),out:Impact[]=[];const x=p.parameters||{},when=String(value(x,'scheduled_at','send_at','resolved_datetime','execute_at')||'')||null;const add=(provider:string,action:string,description:string,payload:any=x,executeAt:string|null=null,always=false)=>{if(always||connected(provider)||provider==='staff')out.push({provider,action,description,required:true,payload,executeAt})};switch(p.action_type){case'menu_availability':add('toast','set_menu_availability','Update Toast menu');add('square','set_menu_availability','Update Square catalog');add('website','set_menu_availability','Update website menu');add('custom_webhook','set_menu_availability','Update connected ordering/menu system');break;case'business_hours':add('website','set_special_hours','Update website hours');add('toast','set_special_hours','Update Toast ordering hours');add('google_calendar','create_closure','Update restaurant calendar');break;case'pause_orders':add('toast','pause_orders','Pause Toast ordering');add('square','pause_orders','Pause Square ordering');break;case'schedule_meeting':add('google_calendar','create_meeting','Create Google Calendar meeting',x);if(String(value(x,'video_provider')||'').toLowerCase()==='zoom')add('zoom','create_meeting','Create Zoom meeting',x);break;case'update_meeting':add('google_calendar','update_meeting','Update Google Calendar meeting',x);break;case'cancel_meeting':add('google_calendar','delete_meeting','Cancel Google Calendar meeting',x);break;case'zoom_meeting':add('zoom','create_meeting','Create Zoom meeting',x);break;case'calendar_reminder':case'internal_task':add('google_calendar','create_task','Create calendar reminder/task',x,when);break;case'send_email':case'supplier_email':case'purchase_request':if(connected('gmail'))add('gmail','send_contact_email','Send email from connected Gmail',x,when,true);else add('email','send_contact_email','Send email through Tauranto',x,when,true);break;case'contact_message':{const channel=String(value(x,'channel')||'').toLowerCase();if(channel==='sms')add('sms','send_contact_sms','Send SMS',x,when,true);if(channel==='email')connected('gmail')?add('gmail','send_contact_email','Send Gmail message',x,when,true):add('email','send_contact_email','Send email',x,when,true);break}case'crm_contact_create':add('hubspot','create_contact','Create HubSpot contact',x);break;case'crm_contact_update':add('hubspot','update_contact','Update HubSpot contact',x);break;case'crm_note':add('hubspot','create_note','Create HubSpot note',x);break;case'crm_task':add('hubspot','create_task','Create HubSpot task',x);break;case'square_catalog_update':add('square','catalog_update','Update Square catalog',x);break;case'square_order':add('square','order_action','Perform Square order action',x);break;case'toast_menu_update':add('toast','menu_update','Update Toast menu',x);break;case'toast_order_action':add('toast','order_action','Perform Toast order action',x);break;case'announcement':add('slack','notify','Notify connected Slack workspace',x);add('staff','notify','Notify restaurant team',x);break;case'website_update':add('website','update','Update connected website',x);add('custom_webhook','update','Update connected website/system',x);break;case'customer_followup':add('hubspot','create_task','Create customer follow-up in HubSpot',x);break;}return out}
++// Providers whose OAuth *connect* flow works but whose action *execution* is
++// not built yet. Square is here: a restaurant can authorize Tauranto (see
++// IntegrationsScreen), but buildImpactPlan must never schedule a Square
++// action off the back of that connection, or the app would silently accept
++// a voice command it cannot actually carry out. Keeping this as a plan-time
++// exclusion (rather than just relying on executor.ts) means the honest
++// "No configured delivery channel can execute this action yet." validation
++// message fires immediately, instead of the command going to
++// pending/executing and failing later.
++const executionNotBuilt=new Set(['square']);
++export function buildImpactPlan(p:any,integrations:any[]):Impact[]{const connected=(name:string)=>!executionNotBuilt.has(name)&&integrations.some(i=>i.status==='connected'&&i.provider===name),out:Impact[]=[];const x=p.parameters||{},when=String(value(x,'scheduled_at','send_at','resolved_datetime','execute_at')||'')||null;const add=(provider:string,action:string,description:string,payload:any=x,executeAt:string|null=null,always=false)=>{if(always||connected(provider)||provider==='staff')out.push({provider,action,description,required:true,payload,executeAt})};switch(p.action_type){case'menu_availability':add('toast','set_menu_availability','Update Toast menu');add('square','set_menu_availability','Update Square catalog');add('website','set_menu_availability','Update website menu');add('custom_webhook','set_menu_availability','Update connected ordering/menu system');break;case'business_hours':add('website','set_special_hours','Update website hours');add('toast','set_special_hours','Update Toast ordering hours');add('google_calendar','create_closure','Update restaurant calendar');break;case'pause_orders':add('toast','pause_orders','Pause Toast ordering');add('square','pause_orders','Pause Square ordering');break;case'schedule_meeting':add('google_calendar','create_meeting','Create Google Calendar meeting',x);if(String(value(x,'video_provider')||'').toLowerCase()==='zoom')add('zoom','create_meeting','Create Zoom meeting',x);break;case'update_meeting':add('google_calendar','update_meeting','Update Google Calendar meeting',x);break;case'cancel_meeting':add('google_calendar','delete_meeting','Cancel Google Calendar meeting',x);break;case'zoom_meeting':add('zoom','create_meeting','Create Zoom meeting',x);break;case'calendar_reminder':case'internal_task':add('google_calendar','create_task','Create calendar reminder/task',x,when);break;case'send_email':case'supplier_email':case'purchase_request':if(connected('gmail'))add('gmail','send_contact_email','Send email from connected Gmail',x,when,true);else add('email','send_contact_email','Send email through Tauranto',x,when,true);break;case'contact_message':{const channel=String(value(x,'channel')||'').toLowerCase();if(channel==='sms')add('sms','send_contact_sms','Send SMS',x,when,true);if(channel==='email')connected('gmail')?add('gmail','send_contact_email','Send Gmail message',x,when,true):add('email','send_contact_email','Send email',x,when,true);break}case'crm_contact_create':add('hubspot','create_contact','Create HubSpot contact',x);break;case'crm_contact_update':add('hubspot','update_contact','Update HubSpot contact',x);break;case'crm_note':add('hubspot','create_note','Create HubSpot note',x);break;case'crm_task':add('hubspot','create_task','Create HubSpot task',x);break;case'square_catalog_update':add('square','catalog_update','Update Square catalog',x);break;case'square_order':add('square','order_action','Perform Square order action',x);break;case'toast_menu_update':add('toast','menu_update','Update Toast menu',x);break;case'toast_order_action':add('toast','order_action','Perform Toast order action',x);break;case'announcement':add('slack','notify','Notify connected Slack workspace',x);add('staff','notify','Notify restaurant team',x);break;case'website_update':add('website','update','Update connected website',x);add('custom_webhook','update','Update connected website/system',x);break;case'customer_followup':add('hubspot','create_task','Create customer follow-up in HubSpot',x);break;}return out}
+ export function requiredApprovals(risk:string,policy:any){if(risk==='critical')return Math.max(2,Number(policy?.critical_approvals||2));if(risk==='high')return Math.max(1,Number(policy?.high_approvals||1));if(risk==='medium')return Math.max(1,Number(policy?.medium_approvals||1));return policy?.auto_execute_low_risk?0:1}
+diff --git a/src/lib/api.ts b/src/lib/api.ts
+index 97cfc1c..826da6c 100644
+--- a/src/lib/api.ts
++++ b/src/lib/api.ts
+@@ -1,4 +1,4 @@
+ import {createClient} from "@supabase/supabase-js";
+ export const supabaseConfigured=Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL&&process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);const url=process.env.EXPO_PUBLIC_SUPABASE_URL||"https://configuration-required.supabase.co",anon=process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY||"configuration-required";export const supabase=createClient(url,anon,{auth:{persistSession:true,autoRefreshToken:true}});const rawBase=(process.env.EXPO_PUBLIC_API_URL||"").trim(),base=rawBase?(/^https?:\/\//i.test(rawBase)?rawBase:`https://${rawBase}`).replace(/\/$/,""):"";
+ async function request(path:string,init:RequestInit={}){if(!base)throw new Error("Tauranto API is not configured.");const {data}=await supabase.auth.getSession();if(!data.session)throw new Error("Your session has expired. Sign in again.");const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);try{const response=await fetch(`${base}${path}`,{...init,signal:controller.signal,headers:{"Content-Type":"application/json",Authorization:`Bearer ${data.session.access_token}`,...init.headers}});const body=await response.json().catch(()=>({}));if(response.status===401){await supabase.auth.refreshSession();throw new Error("Your session changed. Please retry.")}if(!response.ok)throw new Error(body.error||`REQUEST_FAILED_${response.status}`);return body}catch(error:any){if(error?.name==="AbortError")throw new Error("Tauranto took too long to respond. Please retry.");if(error instanceof TypeError)throw new Error(`Cannot reach Tauranto API at ${base}. Check EXPO_PUBLIC_API_URL and your internet connection.`);throw error}finally{clearTimeout(timer)}}
+-export const taurantoApi={currentWorkspace:(preferred?:string)=>request(`/api/account/current-workspace${preferred?`?preferred=${encodeURIComponent(preferred)}`:""}`),interpret:(restaurantId:string,transcript:string,source:"voice"|"typed")=>request("/api/commands/interpret",{method:"POST",body:JSON.stringify({restaurantId,transcript,source})}),decide:(approvalId:string,decision:"approved"|"rejected",note?:string)=>request("/api/approvals/decision",{method:"POST",body:JSON.stringify({approvalId,decision,note})}),listCommands:(restaurantId:string)=>request(`/api/commands/list?restaurantId=${encodeURIComponent(restaurantId)}`),transcribeAudio:(audioBase64:string,mimeType:string)=>request("/api/audio/transcribe",{method:"POST",body:JSON.stringify({audioBase64,mimeType})}),listIntegrations:(restaurantId:string)=>request(`/api/integrations/list?restaurantId=${encodeURIComponent(restaurantId)}`),startOAuth:(restaurantId:string,provider:"gmail"|"google_calendar"|"slack"|"hubspot"|"square"|"zoom")=>request("/api/integrations/oauth-start",{method:"POST",body:JSON.stringify({restaurantId,provider})}),connectWebhook:(restaurantId:string,url:string,displayName:string)=>request("/api/integrations/custom",{method:"POST",body:JSON.stringify({restaurantId,url,displayName})}),disconnectIntegration:(restaurantId:string,integrationId:string)=>request("/api/integrations/custom",{method:"DELETE",body:JSON.stringify({restaurantId,integrationId})}),subscription:(restaurantId:string)=>request(`/api/billing/status?restaurantId=${encodeURIComponent(restaurantId)}`),switchPlan:(restaurantId:string,planId:"free"|"basic"|"enterprise")=>request("/api/billing/switch",{method:"POST",body:JSON.stringify({restaurantId,planId})}),workspace:(restaurantId:string)=>request(`/api/account/workspace?restaurantId=${encodeURIComponent(restaurantId)}`),updateWorkspace:(restaurantId:string,data:any)=>request("/api/account/workspace",{method:"PATCH",body:JSON.stringify({restaurantId,...data})}),managers:(restaurantId:string)=>request(`/api/account/managers?restaurantId=${encodeURIComponent(restaurantId)}`),inviteManager:(restaurantId:string,name:string,email:string,phone:string)=>request("/api/account/managers",{method:"POST",body:JSON.stringify({restaurantId,name,email,phone})}),directory:(restaurantId:string)=>request(`/api/account/directory?restaurantId=${encodeURIComponent(restaurantId)}`),saveContact:(data:any)=>request("/api/account/directory",{method:"POST",body:JSON.stringify(data)}),archiveContact:(restaurantId:string,id:string,kind:"vendor"|"driver"|"service_provider")=>request("/api/account/directory",{method:"DELETE",body:JSON.stringify({restaurantId,id,kind})}),tables:(restaurantId:string,period='today',history=false)=>request(`/api/tables?restaurantId=${encodeURIComponent(restaurantId)}&period=${encodeURIComponent(period)}&history=${history?'true':'false'}`),openGuestSession:(data:any)=>request('/api/tables',{method:'POST',body:JSON.stringify(data)}),updateGuestSession:(data:any)=>request('/api/tables/session',{method:'PATCH',body:JSON.stringify(data)}),parseTableVoice:(restaurantId:string,transcript:string)=>request('/api/tables/parse-voice',{method:'POST',body:JSON.stringify({restaurantId,transcript})}),paymentSettings:(restaurantId:string)=>request(`/api/payments/config?restaurantId=${encodeURIComponent(restaurantId)}`),savePaymentSettings:(restaurantId:string,displayName:string,checkoutBaseUrl:string)=>request('/api/payments/config',{method:'POST',body:JSON.stringify({restaurantId,displayName,checkoutBaseUrl})})};
++export const taurantoApi={currentWorkspace:(preferred?:string)=>request(`/api/account/current-workspace${preferred?`?preferred=${encodeURIComponent(preferred)}`:""}`),interpret:(restaurantId:string,transcript:string,source:"voice"|"typed")=>request("/api/commands/interpret",{method:"POST",body:JSON.stringify({restaurantId,transcript,source})}),decide:(approvalId:string,decision:"approved"|"rejected",note?:string)=>request("/api/approvals/decision",{method:"POST",body:JSON.stringify({approvalId,decision,note})}),listCommands:(restaurantId:string)=>request(`/api/commands/list?restaurantId=${encodeURIComponent(restaurantId)}`),transcribeAudio:(audioBase64:string,mimeType:string)=>request("/api/audio/transcribe",{method:"POST",body:JSON.stringify({audioBase64,mimeType})}),listIntegrations:(restaurantId:string)=>request(`/api/integrations/list?restaurantId=${encodeURIComponent(restaurantId)}`),startOAuth:(restaurantId:string,provider:"gmail"|"google_calendar"|"slack"|"hubspot"|"square"|"zoom")=>request("/api/integrations/oauth-start",{method:"POST",body:JSON.stringify({restaurantId,provider})}),connectWebhook:(restaurantId:string,url:string,displayName:string)=>request("/api/integrations/custom",{method:"POST",body:JSON.stringify({restaurantId,url,displayName})}),disconnectIntegration:(restaurantId:string,integrationId:string)=>request("/api/integrations/custom",{method:"DELETE",body:JSON.stringify({restaurantId,integrationId})}),subscription:(restaurantId:string)=>request(`/api/billing/status?restaurantId=${encodeURIComponent(restaurantId)}`),switchPlan:(restaurantId:string,planId:"free")=>request("/api/billing/switch",{method:"POST",body:JSON.stringify({restaurantId,planId})}),startCheckout:(restaurantId:string,planId:"basic"|"enterprise")=>request("/api/billing/checkout",{method:"POST",body:JSON.stringify({restaurantId,planId})}),workspace:(restaurantId:string)=>request(`/api/account/workspace?restaurantId=${encodeURIComponent(restaurantId)}`),updateWorkspace:(restaurantId:string,data:any)=>request("/api/account/workspace",{method:"PATCH",body:JSON.stringify({restaurantId,...data})}),managers:(restaurantId:string)=>request(`/api/account/managers?restaurantId=${encodeURIComponent(restaurantId)}`),inviteManager:(restaurantId:string,name:string,email:string,phone:string)=>request("/api/account/managers",{method:"POST",body:JSON.stringify({restaurantId,name,email,phone})}),directory:(restaurantId:string)=>request(`/api/account/directory?restaurantId=${encodeURIComponent(restaurantId)}`),saveContact:(data:any)=>request("/api/account/directory",{method:"POST",body:JSON.stringify(data)}),archiveContact:(restaurantId:string,id:string,kind:"vendor"|"driver"|"service_provider")=>request("/api/account/directory",{method:"DELETE",body:JSON.stringify({restaurantId,id,kind})}),tables:(restaurantId:string,period='today',history=false)=>request(`/api/tables?restaurantId=${encodeURIComponent(restaurantId)}&period=${encodeURIComponent(period)}&history=${history?'true':'false'}`),openGuestSession:(data:any)=>request('/api/tables',{method:'POST',body:JSON.stringify(data)}),updateGuestSession:(data:any)=>request('/api/tables/session',{method:'PATCH',body:JSON.stringify(data)}),parseTableVoice:(restaurantId:string,transcript:string)=>request('/api/tables/parse-voice',{method:'POST',body:JSON.stringify({restaurantId,transcript})}),paymentSettings:(restaurantId:string)=>request(`/api/payments/config?restaurantId=${encodeURIComponent(restaurantId)}`),savePaymentSettings:(restaurantId:string,displayName:string,checkoutBaseUrl:string)=>request('/api/payments/config',{method:'POST',body:JSON.stringify({restaurantId,displayName,checkoutBaseUrl})})};
+diff --git a/src/screens/BillingScreen.tsx b/src/screens/BillingScreen.tsx
+index 047ded8..29fd3e2 100644
+--- a/src/screens/BillingScreen.tsx
++++ b/src/screens/BillingScreen.tsx
+@@ -1,5 +1,5 @@
+ import React,{useEffect,useState}from"react";
+-import{ActivityIndicator,Alert,Pressable,ScrollView,StyleSheet,Text,View}from"react-native";
++import{ActivityIndicator,Alert,AppState,Linking,Pressable,ScrollView,StyleSheet,Text,View}from"react-native";
+ import{Ionicons}from"@expo/vector-icons";
+ import{useSafeAreaInsets}from"react-native-safe-area-context";
+ import{taurantoApi}from"../lib/api";
+@@ -8,9 +8,13 @@ export function BillingScreen({restaurantId,onBack}:{restaurantId:string;onBack:
+  const inset=useSafeAreaInsets(),[subscription,setSubscription]=useState<any>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState("");
+  const load=async()=>{setLoading(true);try{const x=await taurantoApi.subscription(restaurantId);setSubscription(x.subscription)}catch(e){Alert.alert("Billing unavailable",e instanceof Error?e.message:"Please retry.")}finally{setLoading(false)}};
+  useEffect(()=>{void load()},[restaurantId]);
+- const choose=async(id:"free"|"basic"|"enterprise")=>{if(subscription?.plans?.id===id)return;setBusy(id);try{const x=await taurantoApi.switchPlan(restaurantId,id);setSubscription(x.subscription);Alert.alert("Plan updated",`Your restaurant is now on ${x.subscription.plans.name}.`)}catch(e){Alert.alert("Could not update plan",e instanceof Error?e.message:"Please retry.")}finally{setBusy("")}};
++ // Paid checkout finishes in the system browser, outside the app, so
++ // refresh the plan as soon as the user comes back to it instead of leaving
++ // a stale "current plan" showing until they manually reload.
++ useEffect(()=>{const sub=AppState.addEventListener("change",v=>{if(v==="active")void load()});return()=>sub.remove()},[restaurantId]);
++ const choose=async(id:"free"|"basic"|"enterprise")=>{if(subscription?.plans?.id===id)return;setBusy(id);try{if(id==="free"){const x=await taurantoApi.switchPlan(restaurantId,"free");setSubscription(x.subscription);Alert.alert("Plan updated",`Your restaurant is now on ${x.subscription.plans.name}.`)}else{const x=await taurantoApi.startCheckout(restaurantId,id);if(!x.checkoutUrl)throw new Error("Checkout could not be started.");await Linking.openURL(x.checkoutUrl)}}catch(e){Alert.alert(id==="free"?"Could not update plan":"Could not start checkout",e instanceof Error?e.message:"Please retry.")}finally{setBusy("")}};
+  if(loading)return <View style={s.loading}><ActivityIndicator color="#168760"/></View>;
+- return <ScrollView style={s.page} contentContainerStyle={{paddingTop:inset.top+14,paddingHorizontal:18,paddingBottom:110}}><View style={s.header}><Pressable onPress={onBack} style={s.back}><Ionicons name="arrow-back" size={20}/></Pressable><View><Text style={s.kicker}>ACCOUNT</Text><Text style={s.title}>Plans & billing</Text></View></View><View style={s.status}><Text style={s.statusLabel}>CURRENT PLAN</Text><Text style={s.statusName}>{subscription?.plans?.name||"Free"}</Text><Text style={s.statusCopy}>{subscription?.status||"active"} · Changes are saved to your restaurant subscription.</Text></View><Plan id="free" name="Free" price="$0" current={subscription?.plans?.id==="free"} busy={busy==="free"} onPress={()=>choose("free")} features={["Voice and typed commands","Recent activity","1 restaurant workspace","1 owner account"]}/><Plan id="basic" name="Basic" price="$14.99" current={subscription?.plans?.id==="basic"} busy={busy==="basic"} onPress={()=>choose("basic")} features={["Everything in Free","Manager approvals","Full activity history","Gmail, Calendar and website","Up to 3 managers"]}/><Plan id="enterprise" name="Enterprise" price="$29.99" current={subscription?.plans?.id==="enterprise"} busy={busy==="enterprise"} onPress={()=>choose("enterprise")} features={["Everything in Basic","POS and business integrations","Operations directory","Multi-location operations","Advanced audit controls"]}/></ScrollView>
++ return <ScrollView style={s.page} contentContainerStyle={{paddingTop:inset.top+14,paddingHorizontal:18,paddingBottom:110}}><View style={s.header}><Pressable onPress={onBack} style={s.back}><Ionicons name="arrow-back" size={20}/></Pressable><View><Text style={s.kicker}>ACCOUNT</Text><Text style={s.title}>Plans & billing</Text></View></View><View style={s.status}><Text style={s.statusLabel}>CURRENT PLAN</Text><Text style={s.statusName}>{subscription?.plans?.name||"Free"}</Text><Text style={s.statusCopy}>{subscription?.status||"active"} · Changes are saved to your restaurant subscription.</Text></View><Plan id="free" name="Free" price="$0" current={subscription?.plans?.id==="free"} busy={busy==="free"} onPress={()=>choose("free")} features={["Voice and typed commands","Recent activity","1 restaurant workspace","1 owner account"]}/><Plan id="basic" name="Basic" price="$30" current={subscription?.plans?.id==="basic"} busy={busy==="basic"} onPress={()=>choose("basic")} features={["Everything in Free","Manager approvals","Full activity history","Gmail, Calendar and website","Up to 3 managers"]}/><Plan id="enterprise" name="Enterprise" price="$65" current={subscription?.plans?.id==="enterprise"} busy={busy==="enterprise"} onPress={()=>choose("enterprise")} features={["Everything in Basic","POS and business integrations","Operations directory","Multi-location operations","Advanced audit controls"]}/></ScrollView>
+ }
+ function Plan({name,price,current,busy,onPress,features}:any){return <View style={[s.plan,current&&s.currentPlan]}><View style={s.planTop}><View><Text style={s.planName}>{name}</Text><Text><Text style={s.price}>{price}</Text><Text style={s.month}> / month</Text></Text></View>{current?<Text style={s.current}>CURRENT</Text>:null}</View>{features.map((x:string)=><View key={x} style={s.feature}><Ionicons name="checkmark-circle" size={18} color="#168760"/><Text style={s.featureText}>{x}</Text></View>)}<Pressable disabled={current||busy} onPress={onPress} style={[s.button,(current||busy)&&s.disabled]}>{busy?<ActivityIndicator color="#fff"/>:<Text style={s.buttonText}>{current?"Current plan":`Choose ${name}`}</Text>}</Pressable></View>}
+ const s=StyleSheet.create({page:{flex:1,backgroundColor:"#fff"},loading:{flex:1,alignItems:"center",justifyContent:"center",backgroundColor:"#fff"},header:{flexDirection:"row",alignItems:"center",gap:11,marginBottom:17},back:{width:40,height:40,borderRadius:20,borderWidth:1,borderColor:"#DDE4E0",alignItems:"center",justifyContent:"center"},kicker:{fontFamily:"NunitoSans_900Black",fontSize:9.5,letterSpacing:1.5,color:"#168760"},title:{fontFamily:"NunitoSans_900Black",fontSize:27,lineHeight:32,color:"#111613"},status:{borderRadius:18,backgroundColor:"#ECFFF5",borderWidth:1,borderColor:"#C9EEDD",padding:16,marginBottom:14},statusLabel:{fontFamily:"NunitoSans_900Black",fontSize:9,letterSpacing:1.4,color:"#168760"},statusName:{fontFamily:"NunitoSans_900Black",fontSize:22,color:"#111613",marginTop:5},statusCopy:{fontFamily:"NunitoSans_600SemiBold",fontSize:12.5,lineHeight:18,color:"#69716C",marginTop:4,textTransform:"capitalize"},plan:{borderWidth:1,borderColor:"#DDE4E0",borderRadius:19,padding:17,marginBottom:13},currentPlan:{borderColor:"#7DDDB5",backgroundColor:"#FCFFFD"},planTop:{flexDirection:"row",justifyContent:"space-between",marginBottom:14},planName:{fontFamily:"NunitoSans_900Black",fontSize:19,color:"#151A17"},price:{fontFamily:"NunitoSans_900Black",fontSize:27,color:"#174D2E"},month:{fontFamily:"NunitoSans_600SemiBold",fontSize:12,color:"#737B76"},current:{fontFamily:"NunitoSans_900Black",fontSize:8.5,color:"#168760",backgroundColor:"#E7F8EF",paddingHorizontal:9,paddingVertical:6,borderRadius:999},feature:{flexDirection:"row",alignItems:"center",gap:8,marginBottom:9},featureText:{fontFamily:"NunitoSans_700Bold",fontSize:12.5,color:"#434B46"},button:{height:48,borderRadius:13,backgroundColor:"#00D084",alignItems:"center",justifyContent:"center",marginTop:7},buttonText:{fontFamily:"NunitoSans_900Black",fontSize:14,color:"#fff"},disabled:{opacity:.48}});
+diff --git a/src/screens/IntegrationsScreen.tsx b/src/screens/IntegrationsScreen.tsx
+index aee00f2..bcadaaa 100644
+--- a/src/screens/IntegrationsScreen.tsx
++++ b/src/screens/IntegrationsScreen.tsx
+@@ -2,5 +2,5 @@ import React,{useCallback,useEffect,useState}from'react';import{ActivityIndicato
+ type Connected={id:string;provider:string;display_name:string;status:string;config?:any};type ProviderKey='website'|'google_calendar'|'gmail'|'slack'|'hubspot'|'square'|'toast'|'zoom';type Provider={key:ProviderKey;name:string;cat:string;group:'restaurant'|'business'};const providers:Provider[]=[{key:'toast',name:'Toast',cat:'Restaurant POS',group:'restaurant'},{key:'square',name:'Square',cat:'POS & payments',group:'restaurant'},{key:'google_calendar',name:'Google Calendar',cat:'Calendar + Google Meet',group:'restaurant'},{key:'gmail',name:'Gmail',cat:'Supplier & business email',group:'restaurant'},{key:'website',name:'Website',cat:'Menu, hours & website actions',group:'restaurant'},{key:'zoom',name:'Zoom',cat:'Video meetings',group:'business'},{key:'hubspot',name:'HubSpot',cat:'CRM',group:'business'},{key:'slack',name:'Slack',cat:'Team communication',group:'business'}];function dbProvider(k:ProviderKey){return k==='website'?'custom_webhook':k}function providerFor(k:string){return providers.find(p=>dbProvider(p.key)===k||p.key===k)}
+ const googleLogos={google_calendar:'https://www.gstatic.com/images/branding/product/2x/calendar_2020q4_48dp.png',gmail:'https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png'} as const;
+ function Logo({p}:{p:Provider}){const b=[s.logo];if(p.key==='google_calendar'||p.key==='gmail')return <View style={b}><Image source={{uri:googleLogos[p.key]}} style={s.officialLogo} resizeMode="contain"/></View>;switch(p.key){case'website':return <View style={[b,{backgroundColor:'#EAF2FF'}]}><MaterialCommunityIcons name="web" size={28} color="#2563EB"/></View>;case'slack':return <View style={b}><MaterialCommunityIcons name="slack" size={30} color="#4A154B"/></View>;case'hubspot':return <View style={b}><MaterialCommunityIcons name="hubspot" size={30} color="#FF7A59"/></View>;case'square':return <View style={b}><View style={s.squareMark}><View style={s.squareInner}/></View></View>;case'toast':return <View style={b}><MaterialCommunityIcons name="toaster" size={29} color="#F15A29"/></View>;case'zoom':return <View style={b}><View style={s.zoomMark}><MaterialCommunityIcons name="video" size={20} color="#fff"/></View></View>}}
+-export function IntegrationsScreen({restaurantId}:{restaurantId:string}){const i=useSafeAreaInsets(),[items,setItems]=useState<Connected[]>([]),[ent,setEnt]=useState<any>({}),[payment,setPayment]=useState<any>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[webModal,setWebModal]=useState(false),[payModal,setPayModal]=useState(false),[name,setName]=useState('Restaurant website'),[url,setUrl]=useState(''),[payName,setPayName]=useState('Restaurant checkout'),[payUrl,setPayUrl]=useState('');const load=useCallback(async()=>{setLoading(true);setError('');try{const[a,b,c]=await Promise.all([taurantoApi.listIntegrations(restaurantId),taurantoApi.subscription(restaurantId),taurantoApi.paymentSettings(restaurantId).catch(()=>({payment:null}))]);setItems(a.integrations||[]);setEnt(b.subscription?.plans?.entitlements||{});setPayment(c.payment||null);if(c.payment){setPayName(c.payment.display_name||'Restaurant checkout');setPayUrl(c.payment.checkout_base_url||'')}}catch(e){setError(e instanceof Error?e.message:'Could not load integrations.')}finally{setLoading(false)}},[restaurantId]);useEffect(()=>{void load();const x=AppState.addEventListener('change',v=>{if(v==='active')void load()});return()=>x.remove()},[load]);const connected=items.filter(x=>x.status==='connected'),available=providers.filter(p=>!connected.some(x=>x.provider===dbProvider(p.key)));const oauth=async(p:Provider)=>{if(p.key==='website')return setWebModal(true);if(p.key==='toast')return Alert.alert('Toast is not available yet','We have not built the Toast connection yet, so there is nothing to connect to right now. Tauranto Tables and payments already work without Toast, and this card will switch to Connect once it ships.');const allowed=p.key==='zoom'?Boolean(ent.zoom??ent.google_calendar??ent.integrations):Boolean(ent[p.key]);if(!allowed)return Alert.alert('Plan required',`${p.name} is not included in your current plan.`);setBusy(p.key);try{const r=await taurantoApi.startOAuth(restaurantId,p.key as any);if(!r.authorizationUrl)throw new Error('Authorization URL was not returned.');await Linking.openURL(r.authorizationUrl)}catch(e){Alert.alert(`Could not connect ${p.name}`,e instanceof Error?e.message:'Authorization failed.')}finally{setBusy('')}};const saveWeb=async()=>{if(!url.startsWith('https://'))return Alert.alert('Secure URL required','Use an HTTPS endpoint.');setBusy('website');try{await taurantoApi.connectWebhook(restaurantId,url.trim(),name.trim());setWebModal(false);setUrl('');await load()}catch(e){Alert.alert('Connection failed',e instanceof Error?e.message:'Please retry.')}finally{setBusy('')}};const savePayment=async()=>{if(!payUrl.startsWith('https://'))return Alert.alert('Secure checkout required','Enter the HTTPS checkout/payment page supplied by your payment provider.');setBusy('payment');try{await taurantoApi.savePaymentSettings(restaurantId,payName.trim()||'Restaurant checkout',payUrl.trim());setPayModal(false);await load()}catch(e){Alert.alert('Could not save payment setup',e instanceof Error?e.message:'Please retry.')}finally{setBusy('')}};const disconnect=(x:Connected)=>Alert.alert(`Disconnect ${x.display_name}?`,'This removes Tauranto’s stored authorization. You can reconnect at any time.',[{text:'Cancel',style:'cancel'},{text:'Disconnect',style:'destructive',onPress:async()=>{setBusy(x.id);try{await taurantoApi.disconnectIntegration(restaurantId,x.id);await load()}catch(e){Alert.alert('Could not disconnect',e instanceof Error?e.message:'Please retry.')}finally{setBusy('')}}}]);const tool=(p:Provider)=>{const soon=p.key==='toast';const allowed=soon?false:p.key==='website'?true:p.key==='zoom'?Boolean(ent.zoom??ent.google_calendar??ent.integrations):Boolean(ent[p.key]);const label=soon?'SOON':allowed?'CONNECT':'LOCKED';return <Pressable key={p.key} onPress={()=>void oauth(p)} style={s.card}><Logo p={p}/><View style={{flex:1}}><Text style={s.name}>{p.name}</Text><Text style={s.detail}>{soon?'Not built yet — coming soon':p.cat}</Text></View>{busy===p.key?<ActivityIndicator color="#6B570A"/>:<View style={[s.available,(!allowed||soon)&&s.lock]}><Text style={allowed&&!soon?s.availableText:s.lockText}>{label}</Text></View>}</Pressable>};return <><ScrollView style={s.page} contentContainerStyle={{paddingTop:i.top+16,paddingHorizontal:20,paddingBottom:i.bottom+240}}><View style={s.head}><View style={{flex:1}}><Text style={s.kicker}>INTEGRATIONS</Text><Text style={s.title}>Connect your stack.</Text></View><Pressable onPress={load} style={s.refresh}><Ionicons name="refresh" size={20} color={colors.leafDeep}/></Pressable></View><Text style={s.subtitle}>Connect only the systems this restaurant uses. Google Calendar creates Google Meet links for video meetings, while the other tools remain available for each restaurant’s workflow.</Text><Text style={s.section}>PAYMENTS</Text><Pressable onPress={()=>setPayModal(true)} style={s.paymentCard}><View style={s.payLogo}><Ionicons name="card" size={28} color="white"/></View><View style={{flex:1}}><Text style={s.name}>{payment?.display_name||'Guest checkout'}</Text><Text style={s.detail}>{payment?.active?'Ready to create table payment links':'Connect the restaurant’s secure checkout'}</Text></View><View style={payment?.active?s.connectedPill:s.available}><Text style={payment?.active?s.connectedText:s.availableText}>{payment?.active?'CONNECTED':'CONNECT'}</Text></View></Pressable><Text style={s.paymentNote}>Tauranto stores the checkout connection and payment status, never raw card numbers. Table sessions can prepare a payment link when an order total is known.</Text><Text style={s.section}>CONNECTED</Text>{loading?<ActivityIndicator color={colors.leafDeep}/>:connected.length===0?<View style={s.empty}><Text style={s.emptyTitle}>No systems connected yet</Text><Text style={s.detail}>Choose a tool below and complete its secure authorization.</Text></View>:connected.map(x=>{const p=providerFor(x.provider);return <View key={x.id} style={s.card}>{p?<Logo p={p}/>:<View style={s.payLogo}><Ionicons name="checkmark" size={25} color="white"/></View>}<View style={{flex:1}}><Text style={s.name}>{x.display_name}</Text><Text style={s.detail}>{x.provider==='google_calendar'?'Authorized • Google Meet ready':'Authorized and ready'}</Text></View>{busy===x.id?<ActivityIndicator color={colors.leafDeep}/>:<Pressable accessibilityLabel={`Disconnect ${x.display_name}`} onPress={()=>disconnect(x)} style={s.disconnectPill}><Text style={s.disconnectText}>DISCONNECT</Text></Pressable>}</View>})}<Text style={s.section}>RESTAURANT TOOLS</Text>{available.filter(p=>p.group==='restaurant').map(tool)}{available.some(p=>p.group==='business')&&<><Text style={s.section}>MORE BUSINESS TOOLS</Text>{available.filter(p=>p.group==='business').map(tool)}</>}{!!error&&<Text style={s.error}>{error}</Text>}</ScrollView><Modal visible={payModal} transparent animationType="fade" onRequestClose={()=>setPayModal(false)}><Pressable style={s.backdrop} onPress={()=>setPayModal(false)}><Pressable style={s.sheet} onPress={e=>e.stopPropagation()}><Text style={s.sheetTitle}>Connect guest payments</Text><Text style={s.detail}>Use the restaurant’s secure hosted checkout URL. Tauranto will associate table sessions and totals with the checkout link; the payment provider handles card entry.</Text><TextInput style={s.input} value={payName} onChangeText={setPayName} placeholder="Restaurant checkout"/><TextInput style={s.input} value={payUrl} onChangeText={setPayUrl} autoCapitalize="none" keyboardType="url" placeholder="https://payments.restaurant.com/checkout"/><Pressable onPress={savePayment} style={s.primary}>{busy==='payment'?<ActivityIndicator color="white"/>:<Text style={s.primaryText}>Save payment connection</Text>}</Pressable><Pressable onPress={()=>setPayModal(false)} style={s.cancel}><Text>Cancel</Text></Pressable></Pressable></Pressable></Modal><Modal visible={webModal} transparent animationType="fade" onRequestClose={()=>setWebModal(false)}><Pressable style={s.backdrop} onPress={()=>setWebModal(false)}><Pressable style={s.sheet} onPress={e=>e.stopPropagation()}><Text style={s.sheetTitle}>Connect your website</Text><TextInput value={name} onChangeText={setName} style={s.input} placeholder="Restaurant website"/><TextInput value={url} onChangeText={setUrl} style={s.input} autoCapitalize="none" keyboardType="url" placeholder="https://example.com/api/tauranto"/><Pressable onPress={saveWeb} style={s.primary}>{busy==='website'?<ActivityIndicator color="white"/>:<Text style={s.primaryText}>Connect website</Text>}</Pressable><Pressable onPress={()=>setWebModal(false)} style={s.cancel}><Text>Cancel</Text></Pressable></Pressable></Pressable></Modal></>}
++export function IntegrationsScreen({restaurantId}:{restaurantId:string}){const i=useSafeAreaInsets(),[items,setItems]=useState<Connected[]>([]),[ent,setEnt]=useState<any>({}),[payment,setPayment]=useState<any>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState(''),[error,setError]=useState(''),[webModal,setWebModal]=useState(false),[payModal,setPayModal]=useState(false),[name,setName]=useState('Restaurant website'),[url,setUrl]=useState(''),[payName,setPayName]=useState('Restaurant checkout'),[payUrl,setPayUrl]=useState('');const load=useCallback(async()=>{setLoading(true);setError('');try{const[a,b,c]=await Promise.all([taurantoApi.listIntegrations(restaurantId),taurantoApi.subscription(restaurantId),taurantoApi.paymentSettings(restaurantId).catch(()=>({payment:null}))]);setItems(a.integrations||[]);setEnt(b.subscription?.plans?.entitlements||{});setPayment(c.payment||null);if(c.payment){setPayName(c.payment.display_name||'Restaurant checkout');setPayUrl(c.payment.checkout_base_url||'')}}catch(e){setError(e instanceof Error?e.message:'Could not load integrations.')}finally{setLoading(false)}},[restaurantId]);useEffect(()=>{void load();const x=AppState.addEventListener('change',v=>{if(v==='active')void load()});return()=>x.remove()},[load]);const connected=items.filter(x=>x.status==='connected'),available=providers.filter(p=>!connected.some(x=>x.provider===dbProvider(p.key)));const oauth=async(p:Provider)=>{if(p.key==='website')return setWebModal(true);if(p.key==='toast')return Alert.alert('Toast is not available yet','We have not built the Toast connection yet, so there is nothing to connect to right now. Tauranto Tables and payments already work without Toast, and this card will switch to Connect once it ships.');const allowed=p.key==='zoom'?Boolean(ent.zoom??ent.google_calendar??ent.integrations):Boolean(ent[p.key]);if(!allowed)return Alert.alert('Plan required',`${p.name} is not included in your current plan.`);setBusy(p.key);try{const r=await taurantoApi.startOAuth(restaurantId,p.key as any);if(!r.authorizationUrl)throw new Error('Authorization URL was not returned.');await Linking.openURL(r.authorizationUrl)}catch(e){Alert.alert(`Could not connect ${p.name}`,e instanceof Error?e.message:'Authorization failed.')}finally{setBusy('')}};const saveWeb=async()=>{if(!url.startsWith('https://'))return Alert.alert('Secure URL required','Use an HTTPS endpoint.');setBusy('website');try{await taurantoApi.connectWebhook(restaurantId,url.trim(),name.trim());setWebModal(false);setUrl('');await load()}catch(e){Alert.alert('Connection failed',e instanceof Error?e.message:'Please retry.')}finally{setBusy('')}};const savePayment=async()=>{if(!payUrl.startsWith('https://'))return Alert.alert('Secure checkout required','Enter the HTTPS checkout/payment page supplied by your payment provider.');setBusy('payment');try{await taurantoApi.savePaymentSettings(restaurantId,payName.trim()||'Restaurant checkout',payUrl.trim());setPayModal(false);await load()}catch(e){Alert.alert('Could not save payment setup',e instanceof Error?e.message:'Please retry.')}finally{setBusy('')}};const disconnect=(x:Connected)=>Alert.alert(`Disconnect ${x.display_name}?`,'This removes Tauranto’s stored authorization. You can reconnect at any time.',[{text:'Cancel',style:'cancel'},{text:'Disconnect',style:'destructive',onPress:async()=>{setBusy(x.id);try{await taurantoApi.disconnectIntegration(restaurantId,x.id);await load()}catch(e){Alert.alert('Could not disconnect',e instanceof Error?e.message:'Please retry.')}finally{setBusy('')}}}]);const tool=(p:Provider)=>{const soon=p.key==='toast';const allowed=soon?false:p.key==='website'?true:p.key==='zoom'?Boolean(ent.zoom??ent.google_calendar??ent.integrations):Boolean(ent[p.key]);const label=soon?'SOON':allowed?'CONNECT':'LOCKED';return <Pressable key={p.key} onPress={()=>void oauth(p)} style={s.card}><Logo p={p}/><View style={{flex:1}}><Text style={s.name}>{p.name}</Text><Text style={s.detail}>{soon?'Not built yet — coming soon':p.cat}</Text></View>{busy===p.key?<ActivityIndicator color="#6B570A"/>:<View style={[s.available,(!allowed||soon)&&s.lock]}><Text style={allowed&&!soon?s.availableText:s.lockText}>{label}</Text></View>}</Pressable>};return <><ScrollView style={s.page} contentContainerStyle={{paddingTop:i.top+16,paddingHorizontal:20,paddingBottom:i.bottom+240}}><View style={s.head}><View style={{flex:1}}><Text style={s.kicker}>INTEGRATIONS</Text><Text style={s.title}>Connect your stack.</Text></View><Pressable onPress={load} style={s.refresh}><Ionicons name="refresh" size={20} color={colors.leafDeep}/></Pressable></View><Text style={s.subtitle}>Connect only the systems this restaurant uses. Google Calendar creates Google Meet links for video meetings, while the other tools remain available for each restaurant’s workflow.</Text><Text style={s.section}>PAYMENTS</Text><Pressable onPress={()=>setPayModal(true)} style={s.paymentCard}><View style={s.payLogo}><Ionicons name="card" size={28} color="white"/></View><View style={{flex:1}}><Text style={s.name}>{payment?.display_name||'Guest checkout'}</Text><Text style={s.detail}>{payment?.active?'Ready to create table payment links':'Connect the restaurant’s secure checkout'}</Text></View><View style={payment?.active?s.connectedPill:s.available}><Text style={payment?.active?s.connectedText:s.availableText}>{payment?.active?'CONNECTED':'CONNECT'}</Text></View></Pressable><Text style={s.paymentNote}>Tauranto stores the checkout connection and payment status, never raw card numbers. Table sessions can prepare a payment link when an order total is known.</Text><Text style={s.section}>CONNECTED</Text>{loading?<ActivityIndicator color={colors.leafDeep}/>:connected.length===0?<View style={s.empty}><Text style={s.emptyTitle}>No systems connected yet</Text><Text style={s.detail}>Choose a tool below and complete its secure authorization.</Text></View>:connected.map(x=>{const p=providerFor(x.provider);return <View key={x.id} style={s.card}>{p?<Logo p={p}/>:<View style={s.payLogo}><Ionicons name="checkmark" size={25} color="white"/></View>}<View style={{flex:1}}><Text style={s.name}>{x.display_name}</Text><Text style={s.detail}>{x.provider==='google_calendar'?'Authorized • Google Meet ready':x.provider==='square'?'Authorized • action execution coming soon':'Authorized and ready'}</Text></View>{busy===x.id?<ActivityIndicator color={colors.leafDeep}/>:<Pressable accessibilityLabel={`Disconnect ${x.display_name}`} onPress={()=>disconnect(x)} style={s.disconnectPill}><Text style={s.disconnectText}>DISCONNECT</Text></Pressable>}</View>})}<Text style={s.section}>RESTAURANT TOOLS</Text>{available.filter(p=>p.group==='restaurant').map(tool)}{available.some(p=>p.group==='business')&&<><Text style={s.section}>MORE BUSINESS TOOLS</Text>{available.filter(p=>p.group==='business').map(tool)}</>}{!!error&&<Text style={s.error}>{error}</Text>}</ScrollView><Modal visible={payModal} transparent animationType="fade" onRequestClose={()=>setPayModal(false)}><Pressable style={s.backdrop} onPress={()=>setPayModal(false)}><Pressable style={s.sheet} onPress={e=>e.stopPropagation()}><Text style={s.sheetTitle}>Connect guest payments</Text><Text style={s.detail}>Use the restaurant’s secure hosted checkout URL. Tauranto will associate table sessions and totals with the checkout link; the payment provider handles card entry.</Text><TextInput style={s.input} value={payName} onChangeText={setPayName} placeholder="Restaurant checkout"/><TextInput style={s.input} value={payUrl} onChangeText={setPayUrl} autoCapitalize="none" keyboardType="url" placeholder="https://payments.restaurant.com/checkout"/><Pressable onPress={savePayment} style={s.primary}>{busy==='payment'?<ActivityIndicator color="white"/>:<Text style={s.primaryText}>Save payment connection</Text>}</Pressable><Pressable onPress={()=>setPayModal(false)} style={s.cancel}><Text>Cancel</Text></Pressable></Pressable></Pressable></Modal><Modal visible={webModal} transparent animationType="fade" onRequestClose={()=>setWebModal(false)}><Pressable style={s.backdrop} onPress={()=>setWebModal(false)}><Pressable style={s.sheet} onPress={e=>e.stopPropagation()}><Text style={s.sheetTitle}>Connect your website</Text><TextInput value={name} onChangeText={setName} style={s.input} placeholder="Restaurant website"/><TextInput value={url} onChangeText={setUrl} style={s.input} autoCapitalize="none" keyboardType="url" placeholder="https://example.com/api/tauranto"/><Pressable onPress={saveWeb} style={s.primary}>{busy==='website'?<ActivityIndicator color="white"/>:<Text style={s.primaryText}>Connect website</Text>}</Pressable><Pressable onPress={()=>setWebModal(false)} style={s.cancel}><Text>Cancel</Text></Pressable></Pressable></Pressable></Modal></>}
+ const s=StyleSheet.create({page:{flex:1,backgroundColor:colors.cream},head:{flexDirection:'row',alignItems:'center'},kicker:{fontFamily:'NunitoSans_900Black',fontSize:12,letterSpacing:1.2,color:colors.leafDeep},title:{fontFamily:'NunitoSans_900Black',fontSize:34,color:colors.ink,marginTop:7},subtitle:{fontFamily:'NunitoSans_600SemiBold',fontSize:15,lineHeight:22,color:colors.muted,marginTop:8},refresh:{width:44,height:44,borderRadius:14,backgroundColor:colors.paper,borderWidth:1,borderColor:colors.line,alignItems:'center',justifyContent:'center'},section:{fontFamily:'NunitoSans_900Black',fontSize:11,letterSpacing:1.1,color:colors.muted,marginTop:24,marginBottom:10},card:{minHeight:80,flexDirection:'row',alignItems:'center',gap:13,backgroundColor:colors.paper,borderRadius:radius.md,borderWidth:1,borderColor:colors.line,padding:14,marginBottom:10,...shadow},paymentCard:{minHeight:92,flexDirection:'row',alignItems:'center',gap:13,backgroundColor:'#F7F3DD',borderRadius:20,borderWidth:1,borderColor:'#E4D89B',padding:15,...shadow},paymentNote:{fontFamily:'NunitoSans_600SemiBold',fontSize:12,lineHeight:18,color:colors.muted,marginTop:8},payLogo:{width:52,height:52,borderRadius:16,backgroundColor:colors.leafDeep,alignItems:'center',justifyContent:'center'},logo:{width:52,height:52,borderRadius:14,backgroundColor:'#fff',alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#E8E9E5'},officialLogo:{width:34,height:34},squareMark:{width:32,height:32,borderRadius:9,backgroundColor:'#111',alignItems:'center',justifyContent:'center'},squareInner:{width:15,height:15,borderRadius:4,backgroundColor:'#fff'},zoomMark:{width:32,height:32,borderRadius:9,backgroundColor:'#2D8CFF',alignItems:'center',justifyContent:'center'},name:{fontFamily:'NunitoSans_900Black',fontSize:16,color:colors.ink},detail:{fontFamily:'NunitoSans_600SemiBold',fontSize:13,lineHeight:19,color:colors.muted,marginTop:4},available:{backgroundColor:'#F4E6A8',borderWidth:1,borderColor:'#E2CF77',paddingHorizontal:10,paddingVertical:7,borderRadius:999},availableText:{fontFamily:'NunitoSans_900Black',fontSize:9,color:'#6B570A'},connectedPill:{backgroundColor:'#EAF5EC',paddingHorizontal:9,paddingVertical:7,borderRadius:999},connectedText:{fontFamily:'NunitoSans_900Black',fontSize:9,color:colors.leafDeep},disconnectPill:{backgroundColor:'#FFF3EF',borderWidth:1,borderColor:'#F0C8BD',paddingHorizontal:9,paddingVertical:7,borderRadius:999},disconnectText:{fontFamily:'NunitoSans_900Black',fontSize:8,color:'#A84D38'},lock:{backgroundColor:'#F1F1EE',borderColor:colors.line},lockText:{fontFamily:'NunitoSans_900Black',fontSize:9,color:colors.muted},empty:{backgroundColor:colors.paper,borderWidth:1,borderColor:colors.line,borderRadius:radius.lg,padding:20},emptyTitle:{fontFamily:'NunitoSans_900Black',fontSize:18,color:colors.ink},error:{fontFamily:'NunitoSans_700Bold',fontSize:13,color:colors.tomato,marginTop:12},backdrop:{flex:1,backgroundColor:'#10251F99',justifyContent:'center',padding:20},sheet:{backgroundColor:colors.cream,borderRadius:26,padding:22,gap:12,...shadow},sheetTitle:{fontFamily:'NunitoSans_900Black',fontSize:25,color:colors.ink},input:{height:52,borderWidth:1,borderColor:colors.line,borderRadius:14,backgroundColor:colors.paper,paddingHorizontal:14,fontSize:14},primary:{height:56,borderRadius:16,backgroundColor:colors.leafDeep,alignItems:'center',justifyContent:'center'},primaryText:{fontFamily:'NunitoSans_900Black',fontSize:15,color:'white'},cancel:{height:42,alignItems:'center',justifyContent:'center'}});
+diff --git a/src/screens/MoreScreen.tsx b/src/screens/MoreScreen.tsx
+index 289b611..619d053 100644
+--- a/src/screens/MoreScreen.tsx
++++ b/src/screens/MoreScreen.tsx
+@@ -1,7 +1,11 @@
+-import React,{useEffect,useState}from'react';import{ScrollView,View,Text,Pressable,StyleSheet,Alert,ActivityIndicator,Modal}from'react-native';import{useSafeAreaInsets}from'react-native-safe-area-context';import{Ionicons}from'@expo/vector-icons';import{taurantoApi,supabase}from'../lib/api';import type{WorkspacePage}from'./WorkspaceScreen';
++import React,{useEffect,useState}from'react';import{ScrollView,View,Text,Pressable,StyleSheet,Alert,ActivityIndicator,Modal,AppState,Linking}from'react-native';import{useSafeAreaInsets}from'react-native-safe-area-context';import{Ionicons}from'@expo/vector-icons';import{taurantoApi,supabase}from'../lib/api';import type{WorkspacePage}from'./WorkspaceScreen';
+ type Category='restaurant'|'operations'|'account'|'profile'|null;
+ const META:any={restaurant:{icon:'storefront-outline',label:'RESTAURANT',title:'Restaurant',copy:'Your restaurant identity, people and guest-facing controls.',tone:'#F3E7D8',ink:'#8A5638'},operations:{icon:'pulse-outline',label:'OPERATIONS',title:'Operations',copy:'Systems, connections and workflows that keep service moving.',tone:'#FFF0B8',ink:'#6D5512'},account:{icon:'wallet-outline',label:'ACCOUNT',title:'Account',copy:'Workspace ownership, subscription and billing controls.',tone:'#E3ECFA',ink:'#315078'},profile:{icon:'person-outline',label:'PROFILE',title:'Profile',copy:'Personal preferences, privacy, security and support.',tone:'#EFE4F4',ink:'#654276'}};
+-export function MoreScreen({restaurantId,onSignOut,onOpenDirectory,onOpenIntegrations,onOpenWorkspace}:{restaurantId:string;onSignOut:()=>void|Promise<void>;onOpenDirectory:()=>void;onOpenIntegrations:()=>void;onOpenWorkspace:(p:WorkspacePage)=>void}){const insets=useSafeAreaInsets(),[billing,setBilling]=useState(false),[category,setCategory]=useState<Category>(()=>{try{const saved=(globalThis as any).window?.sessionStorage?.getItem("tauranto.moreCategory");return["restaurant","operations","account","profile"].includes(saved)?saved as Category:null}catch{return null}}),[sub,setSub]=useState<any>(null),[ws,setWs]=useState<any>(null),[switching,setSwitching]=useState(false),[email,setEmail]=useState(''),[error,setError]=useState('');const load=async()=>{setError('');try{const u=await supabase.auth.getUser();setEmail(u.data.user?.email||'');const[a,b]=await Promise.all([taurantoApi.subscription(restaurantId),taurantoApi.workspace(restaurantId)]);setSub(a.subscription);setWs(b)}catch(e){setError(e instanceof Error?e.message:'Could not load workspace.')}};useEffect(()=>{void load()},[restaurantId]);useEffect(()=>{try{const storage=(globalThis as any).window?.sessionStorage;if(category)storage?.setItem("tauranto.moreCategory",category);else storage?.removeItem("tauranto.moreCategory")}catch{}},[category]);const plan=sub?.plans;const switchPlan=async(planId:'basic'|'enterprise')=>{if(plan?.id===planId)return;setSwitching(true);try{const r=await taurantoApi.switchPlan(restaurantId,planId);setSub(r.subscription);Alert.alert('Plan switched',`Tauranto is now using the ${r.subscription.plans.name} plan.`)}catch(e){Alert.alert('Could not switch plan',e instanceof Error?e.message:'Please retry.')}finally{setSwitching(false)}};const meta=category?META[category]:null;return <><ScrollView style={s.page} showsVerticalScrollIndicator={false} contentContainerStyle={{paddingTop:insets.top+22,paddingHorizontal:20,paddingBottom:Math.max(insets.bottom+190,220)}}>{category?<><Pressable onPress={()=>setCategory(null)} style={({pressed})=>[s.back,pressed&&s.pressed]}><View style={s.backIcon}><Ionicons name='arrow-back' size={20} color='#1F2923'/></View><Text style={s.backText}>Workspace</Text></Pressable><View style={s.controlHero}><View style={s.controlTop}><View style={[s.heroIcon,{backgroundColor:meta.tone}]}><Ionicons name={meta.icon} size={23} color={meta.ink}/></View><View style={s.controlBadge}><View style={s.liveDot}/><Text style={s.controlBadgeText}>CONTROL CENTER</Text></View></View><Text style={s.controlEyebrow}>{meta.label}</Text><Text style={s.controlTitle}>{meta.title}</Text><Text style={s.controlIntro}>{meta.copy}</Text><View style={s.heroRule}/><View style={s.heroMeta}><View><Text style={s.heroMetaValue}>{category==='profile'?4:3}</Text><Text style={s.heroMetaLabel}>MANAGEMENT AREAS</Text></View><View style={s.heroMetaDivider}/><View><Text style={s.heroMetaValue}>{category==='restaurant'?String(ws?.members?.length||0):category==='account'?(plan?.name||'—'):'Live'}</Text><Text style={s.heroMetaLabel}>{category==='restaurant'?'TEAM MEMBERS':category==='account'?'CURRENT PLAN':'WORKSPACE STATUS'}</Text></View></View></View><View style={s.sectionHead}><View><Text style={s.sectionKicker}>QUICK ACCESS</Text><Text style={s.sectionTitle}>Manage {meta.title.toLowerCase()}</Text></View><Text style={s.sectionCount}>{category==='profile'?'04':'03'}</Text></View><View style={s.listGroup}>{category==='restaurant'&&<><Row index='01' icon='storefront-outline' title='Restaurant profile' detail='Identity, location and restaurant details' onPress={()=>onOpenWorkspace('profile')}/><Row index='02' icon='people-outline' title='Team & roles' detail={`${ws?.members?.length||0} active team members`} onPress={()=>onOpenWorkspace('team')}/><Row index='03' icon='notifications-outline' title='Notifications' detail='Service alerts and restaurant notifications' onPress={()=>onOpenWorkspace('notifications')}/></>}{category==='operations'&&<><Row index='01' icon='git-network-outline' title='Integrations' detail={plan?.id==='enterprise'?'POS, communications and business tools':'Website, Gmail & Google Calendar'} onPress={onOpenIntegrations}/><Row index='02' icon='book-outline' title='Operations directory' detail='Vendors, drivers and service providers' onPress={onOpenDirectory}/><Row index='03' icon='options-outline' title='Automation settings' detail='Voice and restaurant operation preferences' onPress={()=>onOpenWorkspace('settings')}/></>}{category==='account'&&<><Row index='01' icon='card-outline' title='Billing & plans' detail={plan?`${plan.name} plan`:'Choose your plan'} onPress={()=>setBilling(true)}/><Row index='02' icon='business-outline' title='Workspace' detail='Restaurant organization and workspace controls' onPress={()=>onOpenWorkspace('profile')}/><Row index='03' icon='log-out-outline' title='Sign out' detail='Securely end this session' danger onPress={onSignOut}/></>}{category==='profile'&&<><Row index='01' icon='person-circle-outline' title='My profile' detail={email||'Personal account details'} onPress={()=>onOpenWorkspace('profile')}/><Row index='02' icon='settings-outline' title='Settings' detail='Voice and personal preferences' onPress={()=>onOpenWorkspace('settings')}/><Row index='03' icon='shield-checkmark-outline' title='Security & privacy' detail='Privacy, audio and retention controls' onPress={()=>onOpenWorkspace('security')}/><Row index='04' icon='help-circle-outline' title='Help & support' detail='Diagnostics, connections and assistance' onPress={()=>onOpenWorkspace('help')}/></>}</View></>:<><View style={s.profileStrip}><View style={s.avatar}><Text style={s.avatarText}>{String(ws?.profile?.full_name||email||'T').trim().charAt(0).toUpperCase()}</Text></View><View style={{flex:1}}><Text style={s.name}>{ws?.profile?.full_name||'Your workspace'}</Text><Text style={s.email}>{email}</Text></View><View style={s.planPill}><View style={s.planDot}/><Text style={s.planPillText}>{plan?.name||'No plan'}</Text></View></View>{!!error&&<View style={s.warning}><Text style={s.warningText}>{error}</Text><Pressable onPress={load}><Text style={s.retry}>Retry</Text></Pressable></View>}<View style={s.hero}><Text style={s.eyebrow}>WORKSPACE</Text><Text style={s.title}>Manage Tauranto</Text><Text style={s.intro}>Restaurant operations, people and account controls — organized in one place.</Text></View><View style={s.navGroup}><CategoryCard type='restaurant' detail='Profile, team and restaurant controls' onPress={()=>setCategory('restaurant')}/><CategoryCard type='operations' detail='Integrations, directory and automation' onPress={()=>setCategory('operations')}/><CategoryCard type='account' detail='Workspace, plan and billing' onPress={()=>setCategory('account')}/><CategoryCard type='profile' detail='Settings, security and support' onPress={()=>setCategory('profile')}/></View></>}</ScrollView><Modal visible={billing} animationType='slide' onRequestClose={()=>setBilling(false)}><ScrollView style={s.page} contentContainerStyle={{paddingTop:insets.top+22,paddingHorizontal:20,paddingBottom:90}}><Pressable onPress={()=>setBilling(false)} style={s.back}><View style={s.backIcon}><Ionicons name='arrow-back' size={20}/></View><Text style={s.backText}>Account</Text></Pressable><Text style={s.eyebrow}>BILLING & PLANS</Text><Text style={s.categoryTitle}>Choose your plan</Text><Text style={s.categoryIntro}>Select the operating level that fits your restaurant.</Text><Plan name='Basic' price='$14.99' current={plan?.id==='basic'} busy={switching} onPress={()=>switchPlan('basic')} features={['Voice + typed commands','Manager approvals','Activity history','Website','Gmail','Google Calendar','Up to 3 managers']}/><Plan name='Enterprise' price='$29.99' current={plan?.id==='enterprise'} busy={switching} onPress={()=>switchPlan('enterprise')} features={['Everything in Basic','Toast + Square POS','Business integrations','Operations directory','Multi-location operations','Advanced audit controls']}/></ScrollView></Modal></>}
++export function MoreScreen({restaurantId,onSignOut,onOpenDirectory,onOpenIntegrations,onOpenWorkspace}:{restaurantId:string;onSignOut:()=>void|Promise<void>;onOpenDirectory:()=>void;onOpenIntegrations:()=>void;onOpenWorkspace:(p:WorkspacePage)=>void}){const insets=useSafeAreaInsets(),[billing,setBilling]=useState(false),[category,setCategory]=useState<Category>(()=>{try{const saved=(globalThis as any).window?.sessionStorage?.getItem("tauranto.moreCategory");return["restaurant","operations","account","profile"].includes(saved)?saved as Category:null}catch{return null}}),[sub,setSub]=useState<any>(null),[ws,setWs]=useState<any>(null),[switching,setSwitching]=useState(false),[email,setEmail]=useState(''),[error,setError]=useState('');const load=async()=>{setError('');try{const u=await supabase.auth.getUser();setEmail(u.data.user?.email||'');const[a,b]=await Promise.all([taurantoApi.subscription(restaurantId),taurantoApi.workspace(restaurantId)]);setSub(a.subscription);setWs(b)}catch(e){setError(e instanceof Error?e.message:'Could not load workspace.')}};useEffect(()=>{void load()},[restaurantId]);useEffect(()=>{try{const storage=(globalThis as any).window?.sessionStorage;if(category)storage?.setItem("tauranto.moreCategory",category);else storage?.removeItem("tauranto.moreCategory")}catch{}},[category]);
++ // Checkout happens in the system browser; refresh plan state when the user
++ // comes back so the billing modal doesn't keep showing the pre-checkout plan.
++ useEffect(()=>{const s=AppState.addEventListener('change',v=>{if(v==='active')void load()});return()=>s.remove()},[restaurantId]);
++ const plan=sub?.plans;const switchPlan=async(planId:'basic'|'enterprise')=>{if(plan?.id===planId)return;setSwitching(true);try{const r=await taurantoApi.startCheckout(restaurantId,planId);if(!r.checkoutUrl)throw new Error('Checkout could not be started.');await Linking.openURL(r.checkoutUrl)}catch(e){Alert.alert('Could not start checkout',e instanceof Error?e.message:'Please retry.')}finally{setSwitching(false)}};const meta=category?META[category]:null;return <><ScrollView style={s.page} showsVerticalScrollIndicator={false} contentContainerStyle={{paddingTop:insets.top+22,paddingHorizontal:20,paddingBottom:Math.max(insets.bottom+190,220)}}>{category?<><Pressable onPress={()=>setCategory(null)} style={({pressed})=>[s.back,pressed&&s.pressed]}><View style={s.backIcon}><Ionicons name='arrow-back' size={20} color='#1F2923'/></View><Text style={s.backText}>Workspace</Text></Pressable><View style={s.controlHero}><View style={s.controlTop}><View style={[s.heroIcon,{backgroundColor:meta.tone}]}><Ionicons name={meta.icon} size={23} color={meta.ink}/></View><View style={s.controlBadge}><View style={s.liveDot}/><Text style={s.controlBadgeText}>CONTROL CENTER</Text></View></View><Text style={s.controlEyebrow}>{meta.label}</Text><Text style={s.controlTitle}>{meta.title}</Text><Text style={s.controlIntro}>{meta.copy}</Text><View style={s.heroRule}/><View style={s.heroMeta}><View><Text style={s.heroMetaValue}>{category==='profile'?4:3}</Text><Text style={s.heroMetaLabel}>MANAGEMENT AREAS</Text></View><View style={s.heroMetaDivider}/><View><Text style={s.heroMetaValue}>{category==='restaurant'?String(ws?.members?.length||0):category==='account'?(plan?.name||'—'):'Live'}</Text><Text style={s.heroMetaLabel}>{category==='restaurant'?'TEAM MEMBERS':category==='account'?'CURRENT PLAN':'WORKSPACE STATUS'}</Text></View></View></View><View style={s.sectionHead}><View><Text style={s.sectionKicker}>QUICK ACCESS</Text><Text style={s.sectionTitle}>Manage {meta.title.toLowerCase()}</Text></View><Text style={s.sectionCount}>{category==='profile'?'04':'03'}</Text></View><View style={s.listGroup}>{category==='restaurant'&&<><Row index='01' icon='storefront-outline' title='Restaurant profile' detail='Identity, location and restaurant details' onPress={()=>onOpenWorkspace('profile')}/><Row index='02' icon='people-outline' title='Team & roles' detail={`${ws?.members?.length||0} active team members`} onPress={()=>onOpenWorkspace('team')}/><Row index='03' icon='notifications-outline' title='Notifications' detail='Service alerts and restaurant notifications' onPress={()=>onOpenWorkspace('notifications')}/></>}{category==='operations'&&<><Row index='01' icon='git-network-outline' title='Integrations' detail={plan?.id==='enterprise'?'POS, communications and business tools':'Website, Gmail & Google Calendar'} onPress={onOpenIntegrations}/><Row index='02' icon='book-outline' title='Operations directory' detail='Vendors, drivers and service providers' onPress={onOpenDirectory}/><Row index='03' icon='options-outline' title='Automation settings' detail='Voice and restaurant operation preferences' onPress={()=>onOpenWorkspace('settings')}/></>}{category==='account'&&<><Row index='01' icon='card-outline' title='Billing & plans' detail={plan?`${plan.name} plan`:'Choose your plan'} onPress={()=>setBilling(true)}/><Row index='02' icon='business-outline' title='Workspace' detail='Restaurant organization and workspace controls' onPress={()=>onOpenWorkspace('profile')}/><Row index='03' icon='log-out-outline' title='Sign out' detail='Securely end this session' danger onPress={onSignOut}/></>}{category==='profile'&&<><Row index='01' icon='person-circle-outline' title='My profile' detail={email||'Personal account details'} onPress={()=>onOpenWorkspace('profile')}/><Row index='02' icon='settings-outline' title='Settings' detail='Voice and personal preferences' onPress={()=>onOpenWorkspace('settings')}/><Row index='03' icon='shield-checkmark-outline' title='Security & privacy' detail='Privacy, audio and retention controls' onPress={()=>onOpenWorkspace('security')}/><Row index='04' icon='help-circle-outline' title='Help & support' detail='Diagnostics, connections and assistance' onPress={()=>onOpenWorkspace('help')}/></>}</View></>:<><View style={s.profileStrip}><View style={s.avatar}><Text style={s.avatarText}>{String(ws?.profile?.full_name||email||'T').trim().charAt(0).toUpperCase()}</Text></View><View style={{flex:1}}><Text style={s.name}>{ws?.profile?.full_name||'Your workspace'}</Text><Text style={s.email}>{email}</Text></View><View style={s.planPill}><View style={s.planDot}/><Text style={s.planPillText}>{plan?.name||'No plan'}</Text></View></View>{!!error&&<View style={s.warning}><Text style={s.warningText}>{error}</Text><Pressable onPress={load}><Text style={s.retry}>Retry</Text></Pressable></View>}<View style={s.hero}><Text style={s.eyebrow}>WORKSPACE</Text><Text style={s.title}>Manage Tauranto</Text><Text style={s.intro}>Restaurant operations, people and account controls — organized in one place.</Text></View><View style={s.navGroup}><CategoryCard type='restaurant' detail='Profile, team and restaurant controls' onPress={()=>setCategory('restaurant')}/><CategoryCard type='operations' detail='Integrations, directory and automation' onPress={()=>setCategory('operations')}/><CategoryCard type='account' detail='Workspace, plan and billing' onPress={()=>setCategory('account')}/><CategoryCard type='profile' detail='Settings, security and support' onPress={()=>setCategory('profile')}/></View></>}</ScrollView><Modal visible={billing} animationType='slide' onRequestClose={()=>setBilling(false)}><ScrollView style={s.page} contentContainerStyle={{paddingTop:insets.top+22,paddingHorizontal:20,paddingBottom:90}}><Pressable onPress={()=>setBilling(false)} style={s.back}><View style={s.backIcon}><Ionicons name='arrow-back' size={20}/></View><Text style={s.backText}>Account</Text></Pressable><Text style={s.eyebrow}>BILLING & PLANS</Text><Text style={s.categoryTitle}>Choose your plan</Text><Text style={s.categoryIntro}>Select the operating level that fits your restaurant.</Text><Plan name='Basic' price='$30' current={plan?.id==='basic'} busy={switching} onPress={()=>switchPlan('basic')} features={['Voice + typed commands','Manager approvals','Activity history','Website','Gmail','Google Calendar','Up to 3 managers']}/><Plan name='Enterprise' price='$65' current={plan?.id==='enterprise'} busy={switching} onPress={()=>switchPlan('enterprise')} features={['Everything in Basic','Toast + Square POS','Business integrations','Operations directory','Multi-location operations','Advanced audit controls']}/></ScrollView></Modal></>}
+ function CategoryCard({type,detail,onPress}:any){const m=META[type];return <Pressable onPress={onPress} style={({pressed})=>[s.categoryCard,pressed&&s.cardPressed]}><View style={[s.categoryIcon,{backgroundColor:m.tone}]}><Ionicons name={m.icon} size={27} color={m.ink}/></View><View style={s.cardCopy}><Text style={s.cardTitle}>{m.title}</Text><Text style={s.cardDetail}>{detail}</Text></View><View style={s.arrowCircle}><Ionicons name='arrow-forward' size={18} color='#314238'/></View></Pressable>}
+ function Row({index,icon,title,detail,onPress,danger}:any){return <Pressable onPress={onPress} style={({pressed})=>[s.row,pressed&&s.rowPressed]}><Text style={s.rowIndex}>{index}</Text><View style={[s.rowIcon,danger&&s.dangerIcon]}><Ionicons name={icon} size={24} color={danger?'#A43C35':'#4D5650'}/></View><View style={{flex:1}}><Text style={[s.rowTitle,danger&&{color:'#A43C35'}]}>{title}</Text><Text style={s.rowDetail}>{detail}</Text></View><View style={s.rowArrow}><Ionicons name='arrow-forward' size={18} color='#314238'/></View></Pressable>}
+ function Plan({name,price,features,current,onPress,busy}:any){return <View style={s.plan}><View style={s.planTop}><View><Text style={s.planName}>{name}</Text><Text><Text style={s.price}>{price}</Text><Text style={s.month}> / month</Text></Text></View>{current&&<Text style={s.current}>CURRENT</Text>}</View>{features.map((x:string)=><View key={x} style={s.feature}><View style={s.check}><Ionicons name='checkmark' size={13} color='#fff'/></View><Text style={s.featureText}>{x}</Text></View>)}<Pressable disabled={current||busy} onPress={onPress} style={[s.planButton,(current||busy)&&s.disabled]}>{busy?<ActivityIndicator color='white'/>:<Text style={s.planButtonText}>{current?'Current plan':`Switch to ${name}`}</Text>}</Pressable></View>}
+diff --git a/supabase/migrations/017_pricing_update.sql b/supabase/migrations/017_pricing_update.sql
+new file mode 100644
+index 0000000..2f0c72f
+--- /dev/null
++++ b/supabase/migrations/017_pricing_update.sql
+@@ -0,0 +1,6 @@
++-- Corrected launch pricing. The 002_billing_plans.sql seed used placeholder
++-- prices ($14.99 / $29.99); this updates them to the real pilot prices.
++-- Plain updates (not inserts) so this is safe to re-run and does not touch
++-- anything else about the plan rows.
++update public.plans set monthly_price_cents = 3000 where id = 'basic';
++update public.plans set monthly_price_cents = 6500 where id = 'enterprise';
+-- 
+2.43.0
+
