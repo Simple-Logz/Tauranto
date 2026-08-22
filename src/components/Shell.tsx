@@ -6,13 +6,13 @@ import{TabName}from"../../App";
 import{colors}from"../theme/tokens";
 import{useTheme}from"../theme/ThemeContext";
 
-// Day-to-day operations live here. Configuration remains in the hamburger menu.
+// Primary, everyday restaurant operations ONLY. Configuration never belongs here.
 const nav:{id:string;name:TabName;label:string;icon:keyof typeof Ionicons.glyphMap;active:keyof typeof Ionicons.glyphMap}[]=[
  {id:"home",name:"Today",label:"Home",icon:"home-outline",active:"home"},
  {id:"tables",name:"Tables",label:"Tables",icon:"restaurant-outline",active:"restaurant"},
- {id:"inventory",name:"Approvals",label:"Inventory",icon:"cube-outline",active:"cube"},
+ {id:"inventory",name:"Inventory",label:"Inventory",icon:"cube-outline",active:"cube"},
  {id:"insights",name:"Analytics",label:"Insights",icon:"stats-chart-outline",active:"stats-chart"},
- {id:"activity",name:"Activity",label:"Activity",icon:"person-outline",active:"person"},
+ {id:"activity",name:"Activity",label:"Activity",icon:"pulse-outline",active:"pulse"},
 ];
 
 export function Shell({children,tab,onTabChange,pending}:{children:React.ReactNode;tab:TabName;onTabChange:(t:TabName)=>void;pending:number;onVoice:()=>void}){
@@ -20,6 +20,7 @@ export function Shell({children,tab,onTabChange,pending}:{children:React.ReactNo
  useEffect(()=>{if(Platform.OS!=="web"||typeof document==="undefined")return;document.body.style.margin="0";document.body.style.overflow="hidden"},[]);
  return <View style={[s.shell,dark&&s.shellDark]}>
   <View style={s.content}>{children}</View>
+  {tab!=="Today"&&<Pressable accessibilityRole="button" accessibilityLabel="Open configuration menu" onPress={()=>onTabChange("More")} style={[s.menuButton,dark&&s.menuButtonDark,{top:insets.top+10}]}><Ionicons name="menu" size={23} color={dark?"#F4F8F5":"#152019"}/></Pressable>}
   <View style={[s.bottomWrap,dark&&s.bottomWrapDark,{paddingBottom:Math.max(insets.bottom,5)}]}>
    <View style={s.bottom}>{nav.map(x=><Nav key={x.id} x={x} tab={tab} pending={pending} change={onTabChange} dark={dark}/>)}</View>
   </View>
@@ -33,7 +34,7 @@ function Nav({x,tab,pending,change,dark}:any){const selected=tab===x.name;return
  </Pressable>}
 
 const s=StyleSheet.create({
- shell:{flex:1,backgroundColor:colors.cream,overflow:"hidden"},shellDark:{backgroundColor:"#101512"},content:{flex:1,overflow:"hidden"},
+ shell:{flex:1,backgroundColor:colors.cream,overflow:"hidden"},shellDark:{backgroundColor:"#101512"},content:{flex:1,overflow:"hidden"},menuButton:{position:"absolute",left:12,zIndex:50,width:40,height:40,borderRadius:12,backgroundColor:"#fff",borderWidth:1,borderColor:"#E1E7E3",alignItems:"center",justifyContent:"center",shadowColor:"#000",shadowOpacity:.05,shadowRadius:8,elevation:3},menuButtonDark:{backgroundColor:"#222A25",borderColor:"#39443E"},
  bottomWrap:{position:"absolute",left:0,right:0,bottom:0,backgroundColor:"rgba(255,255,255,.98)",paddingHorizontal:7,paddingTop:6,borderTopWidth:1,borderTopColor:colors.line,shadowColor:"#173426",shadowOpacity:.04,shadowRadius:8,shadowOffset:{width:0,height:-2},elevation:8},bottomWrapDark:{backgroundColor:"rgba(23,29,25,.98)",borderTopColor:"#2B342F"},bottom:{height:58,flexDirection:"row",alignItems:"center",justifyContent:"space-around"},
  navItem:{flex:1,height:54,alignItems:"center",justifyContent:"center",position:"relative"},navItemPressed:{opacity:.55},iconBox:{width:31,height:25,alignItems:"center",justifyContent:"center"},navLabel:{fontFamily:"NunitoSans_700Bold",fontSize:9,lineHeight:12,color:"#727B75",marginTop:2},navLabelDark:{color:"#98A69F"},navLabelActive:{fontFamily:"NunitoSans_900Black",color:colors.leafDeep},activeLine:{position:"absolute",bottom:0,width:24,height:2.5,borderRadius:2,backgroundColor:colors.leafDeep},badge:{position:"absolute",right:-5,top:-5,minWidth:16,height:16,paddingHorizontal:4,borderRadius:8,backgroundColor:colors.leafDeep,alignItems:"center",justifyContent:"center",borderWidth:2,borderColor:"#fff"},badgeText:{fontFamily:"NunitoSans_900Black",fontSize:7,color:"#fff"}
 });
