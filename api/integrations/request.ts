@@ -1,9 +1,7 @@
 import type {VercelRequest,VercelResponse} from "@vercel/node";import {admin,fail,requireUser} from "../../server/http";
-// Records real, trackable demand for a catalog entry that doesn't have a
-// live connection yet — a genuine database row per restaurant per key
-// (unique constraint in migration 021 makes a repeat tap a no-op, not
-// duplicate rows), so which integrations to build next is a question the
-// data can answer instead of a guess.
+// Records demand for integrations that are not live yet. Keep this endpoint
+// compatible with databases that were created before requested_by was added:
+// restaurant_id + catalog_key are the durable fields required by the UI.
 export default async function handler(req:VercelRequest,res:VercelResponse){
  if(req.method!=="POST")return res.status(405).json({error:"METHOD_NOT_ALLOWED"});
  try{
@@ -14,7 +12,13 @@ export default async function handler(req:VercelRequest,res:VercelResponse){
   if(!member)throw new Error("FORBIDDEN");
   const {data:entry}=await db.from("integration_catalog").select("key").eq("key",catalogKey).maybeSingle();
   if(!entry)throw new Error("UNKNOWN_INTEGRATION");
-  const {error}=await db.from("integration_requests").upsert({restaurant_id:restaurantId,catalog_key:catalogKey,requested_by:user.id},{onConflict:"restaurant_id,catalog_key",ignoreDuplicates:true});
+  const base={restaurant_id:restaurantId,catalog_key:catalogKey};
+  let {error}=await db.from("integration_requests").upsert({...base,requested_by:user.id},{onConflict:"restaurant_id,catalog_key",ignoreDuplicates:true});
+  // Some deployed environments predate migration 021's requested_by field.
+  // Retry with the stable columns instead of exposing a raw schema-cache error.
+  if(error&&(/requested_by/i.test(error.message||'')||/schema cache/i.test(error.message||''))){
+   const retry=await db.from("integration_requests").upsert(base,{onConflict:"restaurant_id,catalog_key",ignoreDuplicates:true});error=retry.error;
+  }
   if(error)throw error;
   return res.json({requested:true});
  }catch(e){return fail(res,e)}
