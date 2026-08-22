@@ -3,7 +3,7 @@ import{ActivityIndicator,Modal,Pressable,ScrollView,StyleSheet,Text,TextInput,Vi
 import{appAlert}from'../components/AppAlert';
 import{Ionicons}from'@expo/vector-icons';
 import{taurantoApi}from'../lib/api';
-import{colors,darkColors,type}from'../theme/tokens';
+import{colors,darkColors,status,type}from'../theme/tokens';
 import{useTheme}from'../theme/ThemeContext';
 import{SkeletonCard}from'../components/Skeleton';
 
@@ -49,7 +49,7 @@ export function LocationsScreen({restaurantId,onSwitchLocation}:{restaurantId:st
    <View style={s.feedTop}><Text style={[s.feedLocation,dark&&s.feedLocationDark]}>{c.locationName}</Text><Text style={[s.feedTime,dark&&s.feedTimeDark]}>{new Date(c.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</Text></View>
    <Text style={[s.feedTitle,dark&&s.feedTitleDark]}>{c.title||c.transcript}</Text>
    <Text style={[s.feedSummary,dark&&s.feedSummaryDark]} numberOfLines={2}>{c.summary}</Text>
-   <View style={s.feedBottom}><Text style={[s.feedStatus,statusColor(c.status)]}>{c.status.replace('_',' ').toUpperCase()}</Text>{c.myApprovalId&&<View style={s.feedActions}><Pressable onPress={()=>void decide(c.myApprovalId,false)} style={s.rejectBtn}><Text style={s.rejectText}>Reject</Text></Pressable><Pressable onPress={()=>void decide(c.myApprovalId,true)} style={s.approveBtn}><Text style={s.approveText}>Approve</Text></Pressable></View>}</View>
+   <View style={s.feedBottom}><View style={[s.feedStatusPill,{backgroundColor:feedStatusColor(c.status).bg}]}><Text style={[s.feedStatus,{color:feedStatusColor(c.status).fg}]}>{c.status.replace('_',' ').toUpperCase()}</Text></View>{c.myApprovalId&&<View style={s.feedActions}><Pressable onPress={()=>void decide(c.myApprovalId,false)} style={s.rejectBtn}><Text style={s.rejectText}>Reject</Text></Pressable><Pressable onPress={()=>void decide(c.myApprovalId,true)} style={s.approveBtn}><Text style={s.approveText}>Approve</Text></Pressable></View>}</View>
   </View>)}
 
   <Modal visible={addOpen} transparent animationType="fade" onRequestClose={()=>setAddOpen(false)}>
@@ -65,7 +65,7 @@ export function LocationsScreen({restaurantId,onSwitchLocation}:{restaurantId:st
 }
 function Stat({n,label}:{n:number;label:string}){return <View style={s.stat}><Text style={s.statValue}>{n}</Text><Text style={s.statLabel}>{label}</Text></View>}
 function roleLabel(role:string){return{owner:'Owner',admin:'Admin',manager:'Manager',operator:'Operator',server:'Server',viewer:'Viewer'}[role]||role}
-function statusColor(status:string){if(status==='completed')return{color:colors.leafDeep};if(status==='pending_approval')return{color:'#B4740A'};if(status==='rejected')return{color:colors.tomatoDeep};return{color:'#6B746E'}}
+function feedStatusColor(cmdStatus:string){if(cmdStatus==='completed'||cmdStatus==='approved')return status.low;if(cmdStatus==='pending_approval'||cmdStatus==='needs_clarification'||cmdStatus==='queued')return status.medium;if(cmdStatus==='rejected'||cmdStatus==='failed'||cmdStatus==='cancelled')return status.high;return status.neutral}
 const s=StyleSheet.create({
  page:{flex:1,backgroundColor:'#FAFBF9'},pageDark:{backgroundColor:darkColors.bg},
  headRow:{flexDirection:'row',alignItems:'flex-start',gap:12},
@@ -89,7 +89,7 @@ const s=StyleSheet.create({
  feedRow:{borderWidth:1,borderColor:'#E5EAE5',borderRadius:16,backgroundColor:'#fff',padding:13,marginBottom:9},feedRowDark:{backgroundColor:darkColors.card,borderColor:darkColors.border},
  feedTop:{flexDirection:'row',justifyContent:'space-between'},feedLocation:{fontFamily:'NunitoSans_900Black',fontSize:9.5,letterSpacing:.6,color:colors.leafDeep},feedLocationDark:{color:colors.leaf},feedTime:{fontFamily:'NunitoSans_700Bold',fontSize:10,color:'#8A928A'},feedTimeDark:{color:darkColors.textMuted},
  feedTitle:{fontFamily:'NunitoSans_900Black',fontSize:14,color:'#1E2420',marginTop:5},feedTitleDark:{color:darkColors.text},feedSummary:{fontFamily:'NunitoSans_600SemiBold',fontSize:12,lineHeight:17,color:'#6F786F',marginTop:3},feedSummaryDark:{color:darkColors.textMuted},
- feedBottom:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:9},feedStatus:{fontFamily:'NunitoSans_900Black',fontSize:9.5,letterSpacing:.5},
+ feedBottom:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:9},feedStatusPill:{paddingHorizontal:8,paddingVertical:4,borderRadius:999},feedStatus:{fontFamily:'NunitoSans_900Black',fontSize:8.5,letterSpacing:.4},
  feedActions:{flexDirection:'row',gap:7},rejectBtn:{paddingHorizontal:11,paddingVertical:7,borderRadius:999,backgroundColor:'#FFF0ED'},rejectText:{fontFamily:'NunitoSans_900Black',fontSize:10,color:'#A84D38'},approveBtn:{paddingHorizontal:11,paddingVertical:7,borderRadius:999,backgroundColor:colors.leaf},approveText:{fontFamily:'NunitoSans_900Black',fontSize:10,color:'#fff'},
  backdrop:{flex:1,backgroundColor:'#10251F99',justifyContent:'center',padding:20},sheet:{backgroundColor:'#fff',borderRadius:26,padding:22,gap:10},sheetDark:{backgroundColor:darkColors.card},sheetTitle:{fontFamily:'NunitoSans_900Black',fontSize:22,color:'#1E2420'},sheetTitleDark:{color:darkColors.text},
  input:{height:52,borderWidth:1,borderColor:'#DEE5DF',borderRadius:14,backgroundColor:'#fff',paddingHorizontal:14,fontSize:14},inputDark:{backgroundColor:darkColors.cardAlt,borderColor:darkColors.border,color:darkColors.text},
