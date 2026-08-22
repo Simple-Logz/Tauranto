@@ -16,19 +16,23 @@ import{useTheme}from"../theme/ThemeContext";
 type Props={pending:number;completed:number;connectedCount:number;onOpenVoice:()=>void;onOpenApprovals:()=>void;onOpenActivity:()=>void;onOpenIntegrations:()=>void};
 export function TaurantoServiceFan({pending,completed,connectedCount,onOpenVoice,onOpenApprovals,onOpenActivity,onOpenIntegrations}:Props){
  const{dark}=useTheme();
+ // Each stage gets its own accent — a vivid icon-tint plus a matching top
+ // stripe — instead of one uniform green tile repeated six times, so the
+ // grid reads at a glance the way a multi-color stat grid does, not as one
+ // undifferentiated block.
  const STEPS=[
-  {step:"01",title:"Speak",icon:"mic-outline"as const,stat:"Say “Hey Tauranto”",onPress:onOpenVoice},
-  {step:"02",title:"Understand",icon:"sparkles-outline"as const,stat:"AI-interpreted instantly",onPress:onOpenVoice},
-  {step:"03",title:"Approve",icon:"shield-checkmark-outline"as const,stat:pending>0?`${pending} waiting on you`:"Nothing waiting",alert:pending>0,onPress:onOpenApprovals},
-  {step:"04",title:"Execute",icon:"git-network-outline"as const,stat:connectedCount>0?`${connectedCount} system${connectedCount===1?"":"s"} connected`:"Connect a system",alert:connectedCount===0,onPress:onOpenIntegrations},
-  {step:"05",title:"Verify",icon:"checkmark-done-circle-outline"as const,stat:`${completed} completed today`,onPress:onOpenActivity},
-  {step:"06",title:"Audit",icon:"document-text-outline"as const,stat:"Full activity trail",onPress:onOpenActivity},
+  {step:"01",title:"Speak",icon:"mic-outline"as const,stat:"Say “Hey Tauranto”",onPress:onOpenVoice,tint:"#00A96F"},
+  {step:"02",title:"Understand",icon:"sparkles-outline"as const,stat:"AI-interpreted instantly",onPress:onOpenVoice,tint:"#7C5CFC"},
+  {step:"03",title:"Approve",icon:"shield-checkmark-outline"as const,stat:pending>0?`${pending} waiting on you`:"Nothing waiting",alert:pending>0,onPress:onOpenApprovals,tint:"#F2B84B"},
+  {step:"04",title:"Execute",icon:"git-network-outline"as const,stat:connectedCount>0?`${connectedCount} system${connectedCount===1?"":"s"} connected`:"Connect a system",alert:connectedCount===0,onPress:onOpenIntegrations,tint:"#4C8DFF"},
+  {step:"05",title:"Verify",icon:"checkmark-done-circle-outline"as const,stat:`${completed} completed today`,onPress:onOpenActivity,tint:"#12B0A6"},
+  {step:"06",title:"Audit",icon:"document-text-outline"as const,stat:"Full activity trail",onPress:onOpenActivity,tint:"#D9628A"},
  ];
  return <View style={s.wrap}>
   <View style={s.head}><View><Text style={[s.kicker,dark&&s.kickerDark]}>TAURANTO AT WORK</Text><Text style={[s.heading,dark&&s.headingDark]}>Your operations pipeline</Text></View></View>
   <Text style={[s.sub,dark&&s.subDark]}>Live status for every step — tap a stage to jump in.</Text>
-  <View style={s.grid}>{STEPS.map(item=><Pressable key={item.step} onPress={item.onPress} style={({pressed})=>[s.tile,dark&&s.tileDark,pressed&&s.tilePressed]}>
-   <View style={s.tileTop}><View style={[s.tileIcon,dark&&s.tileIconDark]}><Ionicons name={item.icon} size={19} color={dark?colors.leaf:colors.leafDeep}/></View><Text style={[s.tileStep,dark&&s.tileStepDark]}>{item.step}</Text></View>
+  <View style={s.grid}>{STEPS.map(item=><Pressable key={item.step} onPress={item.onPress} style={({pressed})=>[s.tile,dark&&s.tileDark,{borderTopWidth:3,borderTopColor:item.tint},pressed&&s.tilePressed]}>
+   <View style={s.tileTop}><View style={[s.tileIcon,{backgroundColor:item.tint+"1F"}]}><Ionicons name={item.icon} size={19} color={item.tint}/></View><Text style={[s.tileStep,dark&&s.tileStepDark]}>{item.step}</Text></View>
    <Text style={[s.tileTitle,dark&&s.tileTitleDark]}>{item.title}</Text>
    <Text numberOfLines={1} style={[s.tileStat,dark&&s.tileStatDark,item.alert&&s.tileStatAlert]}>{item.stat}</Text>
   </Pressable>)}</View>
