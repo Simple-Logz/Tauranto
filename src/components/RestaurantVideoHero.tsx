@@ -1,0 +1,17 @@
+import React,{useEffect,useMemo,useRef,useState}from"react";
+import{Animated,Easing,StyleSheet,Text,View}from"react-native";
+import{Video,ResizeMode}from"expo-av";
+
+const SCENES=[
+ {uri:"https://videos.pexels.com/video-files/3768941/3768941-hd_1920_1080_25fps.mp4",eyebrow:"LIVE OPERATIONS",title:"Run the kitchen hands-free",body:"Tauranto keeps teams moving while service stays in motion."},
+ {uri:"https://videos.pexels.com/video-files/6602255/6602255-uhd_2560_1080_25fps.mp4",eyebrow:"CONNECTED SERVICE",title:"Turn instructions into action",body:"Voice, tables and connected systems working as one workflow."},
+ {uri:"https://videos.pexels.com/video-files/4170497/4170497-uhd_3840_2160_25fps.mp4",eyebrow:"ORDER FLOW",title:"Keep every handoff moving",body:"Coordinate restaurant operations without leaving the floor."},
+ {uri:"https://videos.pexels.com/video-files/5223106/5223106-hd_1920_1080_25fps.mp4",eyebrow:"GUEST EXPERIENCE",title:"Service stays the priority",body:"Less screen time. Faster execution. Better restaurant service."}
+];
+
+export function RestaurantVideoHero(){
+ const[index,setIndex]=useState(0);const fades=useMemo(()=>SCENES.map((_,i)=>new Animated.Value(i===0?1:0)),[]);const text=useRef(new Animated.Value(1)).current;
+ useEffect(()=>{const timer=setInterval(()=>{setIndex(current=>{const next=(current+1)%SCENES.length;text.setValue(0);Animated.parallel(fades.map((fade,i)=>Animated.timing(fade,{toValue:i===next?1:0,duration:850,easing:Easing.bezier(.22,.61,.36,1),useNativeDriver:true}))).start();Animated.timing(text,{toValue:1,duration:620,delay:150,easing:Easing.out(Easing.cubic),useNativeDriver:true}).start();return next})},5200);return()=>clearInterval(timer)},[fades,text]);
+ return <View style={s.wrap}>{SCENES.map((scene,i)=><Animated.View key={scene.uri} pointerEvents="none" style={[StyleSheet.absoluteFill,{opacity:fades[i]}]}><Video source={{uri:scene.uri}} style={StyleSheet.absoluteFill} resizeMode={ResizeMode.COVER} isMuted shouldPlay={i===index||i===(index+1)%SCENES.length} isLooping useNativeControls={false}/></Animated.View>)}<View style={s.scrim}/><Animated.View style={[s.copy,{opacity:text,transform:[{translateY:text.interpolate({inputRange:[0,1],outputRange:[8,0]})}]}]}><Text style={s.eyebrow}>{SCENES[index].eyebrow}</Text><Text style={s.title}>{SCENES[index].title}</Text><Text style={s.body}>{SCENES[index].body}</Text></Animated.View><View style={s.dots}>{SCENES.map((_,i)=><View key={i} style={[s.dot,i===index&&s.dotActive]}/>)}</View></View>
+}
+const s=StyleSheet.create({wrap:{height:188,borderRadius:20,overflow:"hidden",backgroundColor:"#173C2B",marginBottom:13},scrim:{...StyleSheet.absoluteFillObject,backgroundColor:"rgba(5,20,13,.42)"},copy:{position:"absolute",left:20,right:46,bottom:20},eyebrow:{fontFamily:"NunitoSans_900Black",fontSize:11,letterSpacing:1.25,color:"#D9F5E4",marginBottom:5},title:{fontFamily:"NunitoSans_900Black",fontSize:25,lineHeight:29,color:"#fff"},body:{fontFamily:"NunitoSans_700Bold",fontSize:13.5,lineHeight:18,color:"rgba(255,255,255,.88)",marginTop:5},dots:{position:"absolute",right:14,bottom:18,gap:5},dot:{width:5,height:5,borderRadius:3,backgroundColor:"rgba(255,255,255,.42)"},dotActive:{height:16,backgroundColor:"#fff"}});
