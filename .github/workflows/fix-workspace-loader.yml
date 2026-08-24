@@ -1,0 +1,39 @@
+name: Fix workspace loader
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-workspace-loader.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch infinite workspace loader
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('App.tsx')
+          s=p.read_text()
+          s=s.replace('import {AuthScreen} from "./src/screens/AuthScreen";', 'import {AuthScreen} from "./src/screens/AuthScreen";import {WorkspaceRecoveryScreen} from "./src/screens/WorkspaceRecoveryScreen";')
+          s=s.replace('[restaurantId,setRestaurantId]=useState("")', '[restaurantId,setRestaurantId]=useState("") ,[workspaceError,setWorkspaceError]=useState("")')
+          old='useEffect(()=>{if(session)taurantoApi.currentWorkspace().then((w:any)=>setRestaurantId(w.restaurantId)).catch(console.warn)},[session]);'
+          new='useEffect(()=>{let alive=true;if(!session){setRestaurantId("");setWorkspaceError("");return()=>{alive=false}};setWorkspaceError("");taurantoApi.currentWorkspace().then((w:any)=>{if(!alive)return;setRestaurantId(w.restaurantId);setWorkspaceError("")}).catch((e:any)=>{if(!alive)return;console.warn(e);setRestaurantId("");setWorkspaceError(e instanceof Error?e.message:"Unable to load your restaurant workspace.")});return()=>{alive=false}},[session]);const retryWorkspace=()=>{if(!session)return;setWorkspaceError("");taurantoApi.currentWorkspace().then((w:any)=>{setRestaurantId(w.restaurantId);setWorkspaceError("")}).catch((e:any)=>setWorkspaceError(e instanceof Error?e.message:"Unable to load your restaurant workspace."))};'
+          if old not in s:
+              raise SystemExit('workspace effect pattern not found')
+          s=s.replace(old,new)
+          old2='if(!session)return <SafeAreaProvider><AuthScreen/></SafeAreaProvider>;if(!restaurantId)return <SafeAreaProvider><View style={sp.center}><ActivityIndicator color={colors.leafDeep}/><Text>Loading your restaurant workspace…</Text></View></SafeAreaProvider>;'
+          new2='if(!session)return <SafeAreaProvider><AuthScreen/></SafeAreaProvider>;if(!restaurantId&&workspaceError)return <SafeAreaProvider><WorkspaceRecoveryScreen message={workspaceError==="NO_RESTAURANT_MEMBERSHIP"?"This signed-in account is not connected to an active restaurant yet. Sign out to use another account, or retry after access is added.":workspaceError} onRetry={retryWorkspace}/></SafeAreaProvider>;if(!restaurantId)return <SafeAreaProvider><View style={sp.center}><ActivityIndicator color={colors.leafDeep}/><Text>Loading your restaurant workspace…</Text></View></SafeAreaProvider>;'
+          if old2 not in s:
+              raise SystemExit('loader render pattern not found')
+          p.write_text(s)
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add App.tsx
+          git commit -m "Fix infinite restaurant workspace loading state"
+          git push
