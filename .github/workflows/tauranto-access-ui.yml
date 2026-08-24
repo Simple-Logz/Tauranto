@@ -9,15 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Finish access UI
+      - name: Route access screens
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p=Path('src/screens/WorkspaceScreen.tsx');s=p.read_text()
           if "DocumentationScreen" not in s:s=s.replace("import {Skeleton,SkeletonCard} from '../components/Skeleton';","import {Skeleton,SkeletonCard} from '../components/Skeleton';\nimport {DocumentationScreen} from './DocumentationScreen';")
+          if "TeamAccessScreen" not in s:s=s.replace("import {Skeleton,SkeletonCard} from '../components/Skeleton';","import {Skeleton,SkeletonCard} from '../components/Skeleton';\nimport {TeamAccessScreen} from './TeamAccessScreen';")
           s=s.replace("export type WorkspacePage='profile'|'team'|'notifications'|'settings'|'security'|'help'|'locations';","export type WorkspacePage='profile'|'team'|'notifications'|'settings'|'security'|'help'|'locations'|'documentation';")
           marker="if(loading||!ws)return"
-          s=s.replace(marker,"if(page==='documentation')return <DocumentationScreen onBack={onBack} onOpen={()=>{}}/>;"+marker)
+          if "page==='documentation'" not in s:s=s.replace(marker,"if(page==='documentation')return <DocumentationScreen onBack={onBack} onOpen={()=>{}}/>;"+marker)
+          if "return <TeamAccessScreen" not in s:s=s.replace(marker,"if(page==='team')return <TeamAccessScreen restaurantId={restaurantId} onBack={onBack}/>;"+marker)
           s=s.replace("team:'Team & departments'","team:'Teams & Access'")
           p.write_text(s)
           PY
@@ -26,5 +28,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/screens/WorkspaceScreen.tsx
-          git diff --cached --quiet || git commit -m "Finish Teams Access and documentation routing"
+          git diff --cached --quiet || git commit -m "Route Teams Access and documentation screens"
           git push
