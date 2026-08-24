@@ -28,6 +28,7 @@ jobs:
           new2='if(!session)return <SafeAreaProvider><AuthScreen/></SafeAreaProvider>;if(!restaurantId&&workspaceError)return <SafeAreaProvider><WorkspaceRecoveryScreen message={workspaceError==="NO_RESTAURANT_MEMBERSHIP"?"This signed-in account is not connected to an active restaurant yet. Sign out to use another account, or retry after access is added.":workspaceError} onRetry={retryWorkspace}/></SafeAreaProvider>;if(!restaurantId)return <SafeAreaProvider><View style={sp.center}><ActivityIndicator color={colors.leafDeep}/><Text>Loading your restaurant workspace…</Text></View></SafeAreaProvider>;'
           if old2 not in s:
               raise SystemExit('loader render pattern not found')
+          s=s.replace(old2,new2)
           p.write_text(s)
           PY
       - name: Commit fix
@@ -37,3 +38,4 @@ jobs:
           git add App.tsx
           git commit -m "Fix infinite restaurant workspace loading state"
           git push
+# trigger: 2026-08-23
