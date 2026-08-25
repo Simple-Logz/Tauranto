@@ -1,6 +1,8 @@
 export const colors = {
-  ink: "#0B0F0D",
-  inkSoft: "#48524D",
+  // Updated to the "Tauranto High-Performance" reference's near-black
+  // on-surface pair (was #0B0F0D/#48524D) — same role, exact reference hex.
+  ink: "#181D19",
+  inkSoft: "#3E4A41",
   muted: "#747C83",
   leaf: "#00D084",
   leafDeep: "#00A96F",
@@ -25,13 +27,21 @@ export const colors = {
   // data-dense SaaS look (warm gray page, crisp white bordered cards) the
   // account settled on as its visual reference, in place of the earlier
   // deeper-shadow "floating card" treatment.
-  cream: "#FAF9F6",
-  warmWhite: "#FAF9F6",
+  cream: "#FAFBF9",
+  warmWhite: "#FAFBF9",
   paper: "#FFFFFF",
-  line: "#E3E6E1",
+  line: "#DEE5E0",
   blue: "#5B7595",
   lavender: "#756889",
   black: "#101710",
+  // Added adopting the "Tauranto High-Performance" reference design system
+  // (Google Stitch mockups, Aug 2026): a brighter "active" green reserved
+  // for nav/trend states, a vivid AI/voice lavender pair, and the tinted
+  // stat-tile surface used by the home dashboard's bento grid.
+  activeMint: "#28A96B",
+  lavenderAi: "#6D56B3",
+  lavenderPale: "#ECDCFF",
+  surfaceLow: "#F0F5EF",
 };
 
 // Semantic status palette — the one place every risk/state pill across the
@@ -40,6 +50,7 @@ export const colors = {
 // low + a neutral "in review" blue) rather than the ad hoc badge colors that
 // had drifted per screen.
 export const status = {
+  critical: { bg: "#F6D2CD", fg: "#96281F" },
   high: { bg: "#FBE4E1", fg: "#C0392B" },
   medium: { bg: "#FDECC8", fg: "#B7791F" },
   low: { bg: "#E3F5E7", fg: "#1E8A4C" },

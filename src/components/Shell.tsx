@@ -6,12 +6,15 @@ import{TabName}from"../../App";
 import{colors}from"../theme/tokens";
 import{useTheme}from"../theme/ThemeContext";
 
+// A single active-mint accent for every tab, not five hand-picked hues — the
+// reference design's bottom nav marks "here" with one restrained color
+// change (icon + label go green) rather than a different tint per tab.
 const nav:{id:string;name:TabName;label:string;icon:keyof typeof Ionicons.glyphMap;color:string}[]=[
- {id:"home",name:"Today",label:"Home",icon:"home-outline",color:colors.leaf},
- {id:"tables",name:"Tables",label:"Tables",icon:"reader-outline",color:"#776A91"},
- {id:"analytics",name:"Analytics",label:"Analytics",icon:"stats-chart-outline",color:"#667DB1"},
- {id:"activity",name:"Activity",label:"Activity",icon:"time-outline",color:"#4E8DB3"},
- {id:"menu",name:"More",label:"Menu",icon:"menu-outline",color:"#B26F7D"},
+ {id:"home",name:"Today",label:"Home",icon:"home-outline",color:colors.activeMint},
+ {id:"tables",name:"Tables",label:"Tables",icon:"reader-outline",color:colors.activeMint},
+ {id:"analytics",name:"Analytics",label:"Analytics",icon:"stats-chart-outline",color:colors.activeMint},
+ {id:"activity",name:"Activity",label:"Activity",icon:"time-outline",color:colors.activeMint},
+ {id:"menu",name:"More",label:"Menu",icon:"menu-outline",color:colors.activeMint},
 ];
 
 export function Shell({children,tab,onTabChange,pending,onVoice}:{children:React.ReactNode;tab:TabName;onTabChange:(t:TabName)=>void;pending:number;onVoice:()=>void}){
@@ -25,11 +28,10 @@ export function Shell({children,tab,onTabChange,pending,onVoice}:{children:React
  </View>
 }
 
-// A selected tab is a bold, solid-color pill (icon + label both flip to
-// white against the tab's own accent color) rather than a faint tint — the
-// same confident, unmistakable "you are here" treatment as the reference
-// designs, instead of a subtle background wash that's easy to miss.
-function Nav({x,tab,pending,change,dark}:any){const selected=tab===x.name;return <Pressable accessibilityLabel={x.label} onPress={()=>change(x.name)} style={({pressed})=>[s.navItem,selected&&[s.navItemActive,{backgroundColor:x.color,shadowColor:x.color}],pressed&&s.navItemPressed]}><View style={s.iconBox}><Ionicons name={x.icon} size={23} color={selected?"#fff":dark?"#7C9186":x.color}/>{x.id==="activity"&&pending>0&&<View style={s.badge}/>}</View><Text style={[s.navLabel,dark&&s.navLabelDark,selected&&s.navLabelActive]}>{x.label}</Text></Pressable>}
+// A selected tab is just the icon + label switching to the single active
+// accent color — the plain, restrained "you are here" treatment from the
+// reference design, in place of the earlier solid-color pill fill.
+function Nav({x,tab,pending,change,dark}:any){const selected=tab===x.name;return <Pressable accessibilityLabel={x.label} onPress={()=>change(x.name)} style={({pressed})=>[s.navItem,pressed&&s.navItemPressed]}><View style={s.iconBox}><Ionicons name={x.icon} size={23} color={selected?x.color:dark?"#7C9186":colors.inkSoft}/>{x.id==="activity"&&pending>0&&<View style={s.badge}/>}</View><Text style={[s.navLabel,dark&&s.navLabelDark,selected&&{color:x.color}]}>{x.label}</Text></Pressable>}
 
 const s=StyleSheet.create({
  shell:{flex:1,flexDirection:"row",backgroundColor:"#FFFFFF",overflow:"hidden"},shellDark:{backgroundColor:"#101512"},content:{flex:1,overflow:"hidden"},
