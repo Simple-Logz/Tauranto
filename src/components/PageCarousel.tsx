@@ -1,0 +1,10 @@
+import React,{useEffect,useRef}from'react';
+import{Pressable,ScrollView,StyleSheet,Text,View}from'react-native';
+import{darkColors}from'../theme/tokens';import{useTheme}from'../theme/ThemeContext';
+
+export function PageCarousel<T extends string>({items,active,onChange}:{items:readonly T[];active:T;onChange:(item:T)=>void}){
+ const{dark}=useTheme(),ref=useRef<ScrollView>(null),layouts=useRef<Record<string,{x:number;width:number}>>({});
+ useEffect(()=>{const l=layouts.current[active];if(l)ref.current?.scrollTo({x:Math.max(0,l.x-28),animated:true})},[active]);
+ return <View style={[s.shell,dark&&s.shellDark]}><ScrollView ref={ref} horizontal showsHorizontalScrollIndicator={false} bounces decelerationRate="fast" contentContainerStyle={s.content}>{items.map(item=>{const selected=item===active;return <Pressable key={item} onLayout={e=>layouts.current[item]=e.nativeEvent.layout} onPress={()=>onChange(item)} style={s.item} accessibilityRole="tab" accessibilityState={{selected}}><Text numberOfLines={1} style={[s.text,dark&&s.textDark,selected&&s.activeText,dark&&selected&&s.activeTextDark]}>{String(item)}</Text>{selected?<View style={[s.indicator,dark&&s.indicatorDark]}/>:null}</Pressable>})}</ScrollView></View>
+}
+const s=StyleSheet.create({shell:{marginBottom:20,borderBottomWidth:1,borderBottomColor:'#E7E9E7',backgroundColor:'#FFF'},shellDark:{backgroundColor:darkColors.bg,borderBottomColor:darkColors.border},content:{paddingHorizontal:18,gap:32},item:{height:62,minWidth:78,alignItems:'center',justifyContent:'center',position:'relative'},text:{fontFamily:'NunitoSans_900Black',fontSize:18.5,color:'#8B908C',letterSpacing:.1},textDark:{color:darkColors.textMuted},activeText:{fontFamily:'NunitoSans_900Black',fontSize:20,color:'#171A18'},activeTextDark:{color:darkColors.text},indicator:{position:'absolute',left:0,right:0,bottom:0,height:3,borderRadius:2,backgroundColor:'#6D56B3'},indicatorDark:{backgroundColor:'#B9A8F3'}});
