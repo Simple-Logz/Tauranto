@@ -9,12 +9,14 @@ import{useTheme}from"../theme/ThemeContext";
 // A single active-mint accent for every tab, not five hand-picked hues — the
 // reference design's bottom nav marks "here" with one restrained color
 // change (icon + label go green) rather than a different tint per tab.
+// Trimmed to the two root screens per the Stitch reference's bottom bar —
+// Analytics, Activity/Approvals, and the whole account/workspace group now
+// live behind the hamburger menu in each root screen's header instead of
+// their own bottom-tab slot. Nothing was removed from the app: every one of
+// those screens is still reachable from the menu, just not pinned here.
 const nav:{id:string;name:TabName;label:string;icon:keyof typeof Ionicons.glyphMap;color:string}[]=[
  {id:"home",name:"Today",label:"Home",icon:"home-outline",color:colors.activeMint},
  {id:"tables",name:"Tables",label:"Tables",icon:"reader-outline",color:colors.activeMint},
- {id:"analytics",name:"Analytics",label:"Analytics",icon:"stats-chart-outline",color:colors.activeMint},
- {id:"activity",name:"Activity",label:"Activity",icon:"time-outline",color:colors.activeMint},
- {id:"menu",name:"More",label:"Menu",icon:"menu-outline",color:colors.activeMint},
 ];
 
 export function Shell({children,tab,onTabChange,pending,onVoice}:{children:React.ReactNode;tab:TabName;onTabChange:(t:TabName)=>void;pending:number;onVoice:()=>void}){
@@ -31,7 +33,7 @@ export function Shell({children,tab,onTabChange,pending,onVoice}:{children:React
 // A selected tab is just the icon + label switching to the single active
 // accent color — the plain, restrained "you are here" treatment from the
 // reference design, in place of the earlier solid-color pill fill.
-function Nav({x,tab,pending,change,dark}:any){const selected=tab===x.name;return <Pressable accessibilityLabel={x.label} onPress={()=>change(x.name)} style={({pressed})=>[s.navItem,pressed&&s.navItemPressed]}><View style={s.iconBox}><Ionicons name={x.icon} size={23} color={selected?x.color:dark?"#7C9186":colors.inkSoft}/>{x.id==="activity"&&pending>0&&<View style={s.badge}/>}</View><Text style={[s.navLabel,dark&&s.navLabelDark,selected&&{color:x.color}]}>{x.label}</Text></Pressable>}
+function Nav({x,tab,pending,change,dark}:any){const selected=tab===x.name;return <Pressable accessibilityLabel={x.label} onPress={()=>change(x.name)} style={({pressed})=>[s.navItem,pressed&&s.navItemPressed]}><View style={s.iconBox}><Ionicons name={x.icon} size={23} color={selected?x.color:dark?"#7C9186":colors.inkSoft}/>{x.id==="home"&&pending>0&&<View style={s.badge}/>}</View><Text style={[s.navLabel,dark&&s.navLabelDark,selected&&{color:x.color}]}>{x.label}</Text></Pressable>}
 
 const s=StyleSheet.create({
  shell:{flex:1,flexDirection:"row",backgroundColor:"#FFFFFF",overflow:"hidden"},shellDark:{backgroundColor:"#101512"},content:{flex:1,overflow:"hidden"},
