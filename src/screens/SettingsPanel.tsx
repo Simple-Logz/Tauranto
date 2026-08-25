@@ -2,7 +2,8 @@ import React,{useEffect,useState} from "react";
 import {ActivityIndicator,Pressable,StyleSheet,Switch,Text,TextInput,View} from "react-native";
 import {appAlert} from "../components/AppAlert";
 import {Ionicons} from "@expo/vector-icons";
-import {colors,darkColors} from "../theme/tokens";
+import {colors,darkColors,status} from "../theme/tokens";
+const RISK_TONE:Record<RiskLevel,{bg:string;fg:string}>={low:status.low,medium:status.medium,high:status.high,critical:status.critical};
 import {useTheme} from "../theme/ThemeContext";
 import {taurantoApi} from "../lib/api";
 import {SkeletonCard} from "../components/Skeleton";
@@ -84,7 +85,7 @@ function RoleRiskRow({role,value,onChange}:{role:MemberRole;value:RiskLevel;onCh
  return <View style={[s.row,dark&&s.rowDark]}>
   <View style={[s.icon,dark&&s.iconDark]}><Ionicons name="shield-outline" size={21} color={colors.leafDeep}/></View>
   <Text style={[s.rowTitle,dark&&s.rowTitleDark]}>{ROLE_LABELS[role]}</Text>
-  <View style={{flexDirection:"row",gap:6}}>{RISK_LEVELS.map(r=><Pressable key={r} onPress={()=>onChange(r)} style={[s.riskChip,dark&&s.riskChipDark,value===r&&s.riskChipOn,value===r&&dark&&s.riskChipOnDark]}><Text style={[s.riskChipText,dark&&s.riskChipTextDark,value===r&&s.riskChipTextOn]}>{r.slice(0,1).toUpperCase()}</Text></Pressable>)}</View>
+  <View style={{flexDirection:"row",gap:6}}>{RISK_LEVELS.map(r=>{const tone=RISK_TONE[r];return <Pressable key={r} onPress={()=>onChange(r)} style={[s.riskChip,dark&&s.riskChipDark,value===r&&{backgroundColor:tone.bg,borderColor:tone.bg}]}><Text style={[s.riskChipText,dark&&s.riskChipTextDark,value===r&&{color:tone.fg}]}>{r.slice(0,1).toUpperCase()}</Text></Pressable>})}</View>
  </View>
 }
 
